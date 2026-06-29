@@ -29,7 +29,7 @@ before running it on a production host.
 Verify the bot capability:
 
 ```bash
-openclaw gateway call telegram.getMe --json
+curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | jq .
 ```
 
 The bot should report topic support, for example `has_topics_enabled: true`.
@@ -120,4 +120,3 @@ restore your package-level backup.
 - Keep `to` as `telegram:<chatId>` and store the topic id as thread metadata.
 - The composite key `...:thread:<chatId>:<topicId>` is an OpenClaw session
   identity, not a Telegram delivery target.
-
