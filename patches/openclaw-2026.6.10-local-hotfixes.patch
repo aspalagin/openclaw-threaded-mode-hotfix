@@ -1,0 +1,526 @@
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/allowed-updates-C8V4-A3j.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/allowed-updates-C8V4-A3j.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/allowed-updates-C8V4-A3j.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/allowed-updates-C8V4-A3j.js	2026-06-25 19:54:57.578166020 +0000
+@@ -3,6 +3,7 @@
+ const DEFAULT_TELEGRAM_UPDATE_TYPES = API_CONSTANTS.DEFAULT_UPDATE_TYPES;
+ function resolveTelegramAllowedUpdates() {
+ 	const updates = [...DEFAULT_TELEGRAM_UPDATE_TYPES];
++	if (!updates.includes("guest_message")) updates.push("guest_message");
+ 	if (!updates.includes("message_reaction")) updates.push("message_reaction");
+ 	if (!updates.includes("channel_post")) updates.push("channel_post");
+ 	return updates;
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/bot-Dxj27QDQ.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/bot-Dxj27QDQ.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/bot-Dxj27QDQ.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/bot-Dxj27QDQ.js	2026-06-25 19:54:57.595166470 +0000
+@@ -411,6 +411,19 @@
+ function createTelegramIngressSubject(senderId) {
+ 	return { stableId: senderId };
+ }
++function normalizeTelegramGuestSessionScope(value) {
++	const normalized = normalizeLowercaseStringOrEmpty(value);
++	const safe = normalized.replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
++	return safe.slice(0, 96) || "unknown";
++}
++function resolveTelegramGuestSessionKey(baseSessionKey, msg) {
++	const guestQueryId = typeof msg.guest_query_id === "string" && msg.guest_query_id.trim() ? msg.guest_query_id.trim() : "";
++	if (!guestQueryId) return baseSessionKey;
++	const callerChatId = msg.guest_bot_caller_chat?.id != null ? String(msg.guest_bot_caller_chat.id) : "";
++	const callerUserId = msg.guest_bot_caller_user?.id != null ? String(msg.guest_bot_caller_user.id) : msg.from?.id != null ? String(msg.from.id) : "";
++	const scope = callerChatId || callerUserId || guestQueryId;
++	return `${baseSessionKey}:guest:${normalizeTelegramGuestSessionScope(scope)}`;
++}
+ function createTelegramIngressResolver(params) {
+ 	return createChannelIngressResolver({
+ 		channelId: TELEGRAM_CHANNEL_ID,
+@@ -730,7 +743,7 @@
+ 		bot
+ 	});
+ 	const senderId = msg.from?.id ? String(msg.from.id) : "";
+-	const senderUsername = msg.from?.username ?? "";
++	const senderUsername = msg.from?.username ?? msg.guest_bot_caller_user?.username ?? "";
+ 	const commandsAllowFromConfigured = isTelegramCommandsAllowFromConfigured(cfg);
+ 	const preContextCommandsAllowFromAccess = commandsAllowFromConfigured ? resolveTelegramCommandAuthorization({
+ 		cfg,
+@@ -3900,6 +3913,36 @@
+ 			errorMessage: "handler failed"
+ 		});
+ 	});
++	bot.on("guest_message", async (ctx) => {
++		const msg = ctx.guestMessage ?? ctx.update?.guest_message;
++		if (!msg) return;
++		const guestQueryId = typeof msg.guest_query_id === "string" && msg.guest_query_id.trim() ? msg.guest_query_id.trim() : void 0;
++		if (!guestQueryId) {
++			logVerbose("telegram guest_message skipped: missing guest_query_id");
++			return;
++		}
++		const guestFrom = msg.from ?? msg.guest_bot_caller_user;
++		const normalizedMsg = withResolvedTelegramForumFlag({
++			...msg,
++			...(guestFrom ? { from: guestFrom } : {})
++		}, false);
++		if (normalizedMsg.from?.id != null && normalizedMsg.from.id === ctx.me?.id) return;
++		await handleInboundMessageLike({
++			ctxForDedupe: ctx,
++			ctx: buildSyntheticContext(ctx, normalizedMsg),
++			msg: normalizedMsg,
++			chatId: normalizedMsg.chat.id,
++			isGroup: false,
++			isForum: false,
++			messageThreadId: void 0,
++			senderId: normalizedMsg.from?.id != null ? String(normalizedMsg.from.id) : "",
++			senderUsername: normalizedMsg.from?.username ?? "",
++			requireConfiguredGroup: false,
++			sendOversizeWarning: false,
++			oversizeLogMessage: "guest message media exceeds size limit",
++			errorMessage: "guest_message handler failed"
++		});
++	});
+ 	bot.on("edited_message", async (ctx) => {
+ 		const msg = ctx.editedMessage;
+ 		if (!msg) return;
+@@ -4406,6 +4449,8 @@
+ 		hasAbortRequest,
+ 		commandSource
+ 	});
++	const effectiveInboundEventKind = msg.guest_query_id ? "guest_message" : inboundEventKind;
++	const guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Do not use message delivery tools, TTS, voice, audio, files, media, reactions, or typing cues. You may use available tools, including longer-running tools, when needed to complete the user's request; do not refuse only because this is Guest Mode." : void 0;
+ 	const ctxPayload = await sessionRuntime.buildChannelInboundEventContext({
+ 		channel: "telegram",
+ 		resolveSupplementalMedia: true,
+@@ -4436,10 +4481,10 @@
+ 			messageThreadId: threadSpec.id
+ 		},
+ 		message: {
+-			inboundEventKind,
++			inboundEventKind: effectiveInboundEventKind,
+ 			body: combinedBody,
+ 			rawBody,
+-			bodyForAgent: bodyText,
++			bodyForAgent: guestModeDeliveryHint ? `${bodyText}\n\n${guestModeDeliveryHint}` : bodyText,
+ 			commandBody,
+ 			inboundHistory,
+ 			sourceModality: msg.voice ? "voice" : void 0
+@@ -4500,6 +4545,11 @@
+ 			ForwardedFromChatType: visibleForwardOrigin?.fromChatType,
+ 			ForwardedFromMessageId: visibleForwardOrigin?.fromMessageId,
+ 			WasMentioned: isGroup ? effectiveWasMentioned : void 0,
++			GuestMode: msg.guest_query_id ? true : void 0,
++			GuestDeliveryHint: guestModeDeliveryHint,
++			GuestQueryId: typeof msg.guest_query_id === "string" ? msg.guest_query_id : void 0,
++			GuestBotCallerUserId: msg.guest_bot_caller_user?.id != null ? String(msg.guest_bot_caller_user.id) : void 0,
++			GuestBotCallerChatId: msg.guest_bot_caller_chat?.id != null ? String(msg.guest_bot_caller_chat.id) : void 0,
+ 			Sticker: allMedia[0]?.stickerMetadata,
+ 			StickerMediaIncluded: allMedia[0]?.stickerMetadata ? currentMediaFacts.length > 0 : void 0,
+ 			SkipStickerMediaUnderstanding: stickerCacheHit ? true : void 0,
+@@ -4812,10 +4862,12 @@
+ const buildTelegramMessageContext = async ({ primaryCtx, allMedia, replyMedia = [], replyChain = [], promptContext = [], storeAllowFrom, options, bot, cfg, account, historyLimit, groupHistories, dmPolicy, allowFrom, groupAllowFrom, ackReactionScope, logger, resolveGroupActivation, resolveGroupRequireMention, resolveTelegramGroupConfig, loadFreshConfig, runtime, sessionRuntime, upsertPairingRequest, sendChatActionHandler }) => {
+ 	const msg = primaryCtx.message;
+ 	const chatId = msg.chat.id;
+-	const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+-	const senderId = msg.from?.id ? String(msg.from.id) : "";
++	const guestQueryId = typeof msg.guest_query_id === "string" && msg.guest_query_id.trim() ? msg.guest_query_id.trim() : void 0;
++	const isGuest = Boolean(guestQueryId);
++	const isGroup = !isGuest && (msg.chat.type === "group" || msg.chat.type === "supergroup");
++	const senderId = msg.from?.id ? String(msg.from.id) : msg.guest_bot_caller_user?.id != null ? String(msg.guest_bot_caller_user.id) : "";
+ 	const messageThreadId = msg.message_thread_id;
+-	const reactionApi = typeof bot.api.setMessageReaction === "function" ? bot.api.setMessageReaction.bind(bot.api) : null;
++	const reactionApi = !isGuest && typeof bot.api.setMessageReaction === "function" ? bot.api.setMessageReaction.bind(bot.api) : null;
+ 	const getChatApi = typeof bot.api.getChat === "function" ? bot.api.getChat.bind(bot.api) : void 0;
+ 	const isForum = await resolveTelegramForumFlag({
+ 		chatId,
+@@ -4917,7 +4969,7 @@
+ 		senderId
+ 	}));
+ 	const hasGroupAllowOverride = groupAllowOverride !== void 0;
+-	const senderUsername = msg.from?.username ?? "";
++	const senderUsername = msg.from?.username ?? msg.guest_bot_caller_user?.username ?? "";
+ 	const baseAccess = evaluateTelegramGroupBaseAccess({
+ 		isGroup,
+ 		groupConfig,
+@@ -4947,12 +4999,14 @@
+ 		return null;
+ 	}
+ 	const sendTyping = async () => {
++		if (isGuest) return;
+ 		await withTelegramApiErrorLogging({
+ 			operation: "sendChatAction",
+ 			fn: () => sendChatActionHandler.sendChatAction(chatId, "typing", buildTypingThreadParams(replyThreadId))
+ 		});
+ 	};
+ 	const sendRecordVoice = async () => {
++		if (isGuest) return;
+ 		try {
+ 			await withTelegramApiErrorLogging({
+ 				operation: "sendChatAction",
+@@ -5000,13 +5054,14 @@
+ 		isGroup,
+ 		senderId
+ 	});
+-	const sessionKey = (shouldUseTelegramDmThreadSession({
++	const threadedSessionKey = (shouldUseTelegramDmThreadSession({
+ 		dmThreadId,
+ 		botHasTopicsEnabled: resolveTelegramBotHasTopicsEnabled(primaryCtx.me)
+ 	}) && dmThreadId != null ? resolveThreadSessionKeys({
+ 		baseSessionKey,
+ 		threadId: `${chatId}:${dmThreadId}`
+ 	}) : null)?.sessionKey ?? baseSessionKey;
++	const sessionKey = isGuest ? resolveTelegramGuestSessionKey(threadedSessionKey, msg) : threadedSessionKey;
+ 	route = {
+ 		...route,
+ 		sessionKey,
+@@ -6439,7 +6494,9 @@
+ 	});
+ 	const forceBlockStreamingForReasoning = resolvedReasoningLevel === "on";
+ 	const streamReasoningDraft = resolvedReasoningLevel === "stream";
+-	const streamDeliveryEnabled = !isRoomEvent && streamMode !== "off";
++	const guestQueryId = typeof ctxPayload.GuestQueryId === "string" && ctxPayload.GuestQueryId.trim() ? ctxPayload.GuestQueryId.trim() : void 0;
++	const isGuestQuery = Boolean(guestQueryId);
++	const streamDeliveryEnabled = !isRoomEvent && !isGuestQuery && streamMode !== "off";
+ 	const rawReplyQuoteText = ctxPayload.ReplyToIsQuote && typeof ctxPayload.ReplyToQuoteText === "string" ? ctxPayload.ReplyToQuoteText : void 0;
+ 	const replyQuoteText = ctxPayload.ReplyToIsQuote ? rawReplyQuoteText?.trim() ? rawReplyQuoteText : ctxPayload.ReplyToBody?.trim() || void 0 : void 0;
+ 	const replyQuoteMessageId = replyQuoteText && !ctxPayload.ReplyToIsExternal ? resolveTelegramReplyId(ctxPayload.ReplyToId) : void 0;
+@@ -6828,6 +6885,7 @@
+ 		chunkMode,
+ 		richMessages: telegramCfg.richMessages,
+ 		linkPreview: telegramCfg.linkPreview,
++		guestQueryId,
+ 		replyQuoteMessageId,
+ 		replyQuoteText,
+ 		replyQuotePosition,
+@@ -6921,7 +6979,7 @@
+ 			const deliverablePayload = applyQuoteReplyTarget(payload);
+ 			const silent = options?.silent ?? (silentErrorReplies && payload.isError === true);
+ 			const durableDelivery = telegramDeps.deliverInboundReplyWithMessageSendContext;
+-			if (options?.durable && durableDelivery) {
++			if (options?.durable && durableDelivery && !guestQueryId) {
+ 				const durable = await durableDelivery({
+ 					cfg,
+ 					channel: "telegram",
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/chat-BmzuyR4R.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/chat-BmzuyR4R.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/chat-BmzuyR4R.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/chat-BmzuyR4R.js	2026-06-25 19:54:57.599166575 +0000
+@@ -1823,12 +1823,28 @@
+ 	if (index < 0) return messages;
+ 	return [...messages.slice(0, index), ...messages.slice(index + 1)];
+ }
+-async function handleChatHistoryRequest({ params, respond, context, method, includeAgentsList, includeMetadata }) {
++const CHAT_HISTORY_WINDOWS_TRAY_LIMIT = 10;
++function isOpenClawWindowsTrayClient(client) {
++	const info = client?.connect?.client;
++	const displayName = normalizeOptionalText(info?.displayName);
++	const platform = normalizeOptionalText(info?.platform)?.toLowerCase();
++	const deviceFamily = normalizeOptionalText(info?.deviceFamily)?.toLowerCase();
++	const clientId = normalizeOptionalText(info?.id)?.toLowerCase();
++	const clientMode = normalizeOptionalText(info?.mode)?.toLowerCase();
++	return displayName === "OpenClaw Windows Tray" || clientId === "cli" && clientMode === "cli" && platform === "windows" && deviceFamily === "desktop";
++}
++function resolveChatHistoryLimitForClient(params) {
++	const requested = typeof params.params.limit === "number" ? params.params.limit : 200;
++	if (!isOpenClawWindowsTrayClient(params.client)) return requested;
++	return Math.min(requested, CHAT_HISTORY_WINDOWS_TRAY_LIMIT);
++}
++async function handleChatHistoryRequest({ params, respond, context, client, method, includeAgentsList, includeMetadata }) {
+ 	if (!validateChatHistoryParams(params)) {
+ 		respond(false, void 0, errorShape(ErrorCodes.INVALID_REQUEST, `invalid ${method} params: ${formatValidationErrors(validateChatHistoryParams.errors)}`));
+ 		return;
+ 	}
+-	const { sessionKey, limit, maxChars } = params;
++	const { sessionKey, maxChars } = params;
++	const limit = resolveChatHistoryLimitForClient({ params, client });
+ 	const agentIdOverride = normalizeOptionalText(params.agentId);
+ 	const requestedAgentId = resolveRequestedChatAgentId({
+ 		cfg: context.getRuntimeConfig?.(),
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/delivery-D90LPJnY.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/delivery-D90LPJnY.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/delivery-D90LPJnY.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/delivery-D90LPJnY.js	2026-06-25 19:54:57.596166496 +0000
+@@ -160,6 +160,86 @@
+ 		throw err;
+ 	}
+ }
++const TELEGRAM_GUEST_TEXT_LIMIT = 4096;
++const TELEGRAM_GUEST_QUERY_EXPIRED_RE = /query is too old|response timeout expired|query ID is invalid/i;
++function buildTelegramGuestResultId() {
++	return `oc-${Date.now().toString(36)}`;
++}
++function isTelegramGuestQueryExpiredError(err) {
++	return TELEGRAM_GUEST_QUERY_EXPIRED_RE.test(formatErrorMessage(err));
++}
++function truncateTelegramGuestText(text) {
++	if (text.length <= TELEGRAM_GUEST_TEXT_LIMIT) return text;
++	const suffix = "\n\n[Ответ обрезан из-за лимита Telegram guest mode.]";
++	return `${text.slice(0, Math.max(1, TELEGRAM_GUEST_TEXT_LIMIT - suffix.length - 1)).trimEnd()}…${suffix}`;
++}
++function buildTelegramGuestTextResult(text, opts) {
++	const inputMessageContent = {
++		message_text: truncateTelegramGuestText(text),
++		...(opts?.parseMode ? { parse_mode: opts.parseMode } : {}),
++		...((opts?.linkPreview ?? true) ? {} : { link_preview_options: { is_disabled: true } })
++	};
++	return {
++		type: "article",
++		id: buildTelegramGuestResultId(),
++		title: "Ответ",
++		input_message_content: inputMessageContent,
++		...opts?.replyMarkup ? { reply_markup: opts.replyMarkup } : {}
++	};
++}
++async function answerTelegramGuestQueryViaOfficialApi(guestQueryId, result, token) {
++	if (!token?.trim()) throw new Error("telegram answerGuestQuery fallback unavailable: missing bot token");
++	const res = await fetch(`https://api.telegram.org/bot${token}/answerGuestQuery`, {
++		method: "POST",
++		headers: { "content-type": "application/json" },
++		body: JSON.stringify({
++			guest_query_id: guestQueryId,
++			result
++		})
++	});
++	const data = await res.json().catch(() => null);
++	if (!res.ok || !data?.ok) {
++		const description = typeof data?.description === "string" ? data.description : `HTTP ${res.status}`;
++		throw new Error(`telegram answerGuestQuery failed: ${description}`);
++	}
++	return data.result;
++}
++async function answerTelegramGuestQuery(bot, guestQueryId, result, runtime, opts) {
++	if (typeof bot.api.answerGuestQuery === "function") return await sendTelegramWithThreadFallback({
++		operation: "answerGuestQuery",
++		runtime,
++		requestParams: {},
++		send: () => bot.api.answerGuestQuery(guestQueryId, result)
++	});
++	if (typeof bot.api.raw?.answerGuestQuery === "function") return await sendTelegramWithThreadFallback({
++		operation: "answerGuestQuery",
++		runtime,
++		requestParams: {},
++		send: () => bot.api.raw.answerGuestQuery({
++			guest_query_id: guestQueryId,
++			result
++		})
++	});
++	if (opts?.token) return await sendTelegramWithThreadFallback({
++		operation: "answerGuestQuery (official api fallback)",
++		runtime,
++		requestParams: {},
++		send: () => answerTelegramGuestQueryViaOfficialApi(guestQueryId, result, opts.token)
++	});
++	throw new Error("telegram answerGuestQuery unavailable");
++}
++async function sendTelegramGuestText(bot, guestQueryId, text, runtime, opts) {
++	if (!guestQueryId.trim() || !text.trim()) return;
++	const result = buildTelegramGuestTextResult(text, {
++		parseMode: opts?.parseMode,
++		linkPreview: opts?.linkPreview,
++		replyMarkup: opts?.replyMarkup
++	});
++	const sent = await answerTelegramGuestQuery(bot, guestQueryId, result, runtime, { token: opts?.token });
++	const inlineMessageId = sent?.inline_message_id;
++	runtime.log?.(`telegram answerGuestQuery ok inline_message_id=${inlineMessageId ?? "unknown"}`);
++	return inlineMessageId ?? "guest";
++}
+ //#endregion
+ //#region extensions/telegram/src/bot/reply-threading.ts
+ function resolveReplyToForSend(params) {
+@@ -261,6 +341,30 @@
+ }
+ async function deliverTextReply(params) {
+ 	let firstDeliveredMessageId;
++	if (params.guestQueryId) {
++		if (params.progress.guestAnswered) return;
++		const chunks = filterEmptyTelegramTextChunks(params.chunkText(params.replyText));
++		const firstChunk = chunks[0];
++		const fallbackText = firstChunk?.text ?? params.replyText;
++		const text = chunks.length > 1 ? `${fallbackText.trimEnd()}\n\n[Ответ обрезан из-за лимита Telegram guest mode.]` : fallbackText;
++		try {
++			firstDeliveredMessageId = await sendTelegramGuestText(params.bot, params.guestQueryId, text, params.runtime, {
++				parseMode: firstChunk?.richMessage ? void 0 : firstChunk?.html ? "HTML" : void 0,
++				linkPreview: params.linkPreview,
++				replyMarkup: params.replyMarkup,
++				token: params.token
++			});
++		} catch (err) {
++			if (!isTelegramGuestQueryExpiredError(err)) throw err;
++			params.runtime.log?.(`telegram guest query expired; falling back to sendMessage: ${formatErrorMessage(err)}`);
++		}
++		if (firstDeliveredMessageId != null) {
++			params.progress.guestAnswered = true;
++			params.progress.hasDelivered = true;
++			params.progress.deliveredCount += 1;
++			return firstDeliveredMessageId;
++		}
++	}
+ 	await sendChunkedTelegramReplyText({
+ 		chunks: filterEmptyTelegramTextChunks(params.chunkText(params.replyText)),
+ 		progress: params.progress,
+@@ -550,9 +654,11 @@
+ 				richMessages: params.richMessages,
+ 				tableMode: params.tableMode,
+ 				linkPreview: params.linkPreview,
++				token: params.token,
+ 				silent: params.silent,
+ 				replyToId: params.replyToId,
+ 				replyToMode: params.replyToMode,
++				guestQueryId: params.guestQueryId,
+ 				progress: params.progress
+ 			});
+ 			pendingFollowUpText = void 0;
+@@ -707,13 +813,13 @@
+ 				interactive
+ 			}));
+ 			let firstDeliveredMessageId;
+-			if (mediaList.length === 0) firstDeliveredMessageId = await deliverTextReply({
++			if (mediaList.length === 0 || params.guestQueryId) firstDeliveredMessageId = await deliverTextReply({
+ 				bot: params.bot,
+ 				chatId: params.chatId,
+ 				runtime: params.runtime,
+ 				thread: params.thread,
+ 				chunkText,
+-				replyText: reply.text || "",
++				replyText: params.guestQueryId && !reply.text ? "[Медиа-вложение недоступно в Telegram guest mode.]" : reply.text || "",
+ 				replyMarkup,
+ 				replyQuoteMessageId: replyQuote.messageId,
+ 				replyQuoteText: replyQuote.text,
+@@ -722,9 +828,11 @@
+ 				richMessages: params.richMessages,
+ 				tableMode: params.tableMode,
+ 				linkPreview: params.linkPreview,
++				token: params.token,
+ 				silent: params.silent,
+ 				replyToId,
+ 				replyToMode: params.replyToMode,
++				guestQueryId: params.guestQueryId,
+ 				progress
+ 			});
+ 			else {
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/message-handler-hrsVqRu0.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/message-handler-hrsVqRu0.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/message-handler-hrsVqRu0.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/message-handler-hrsVqRu0.js	2026-06-25 19:54:57.601166628 +0000
+@@ -800,6 +800,19 @@
+ 		...isMobileAppPlatformVersionRefresh ? { refreshPairedPlatform: params.claimedPlatform } : {}
+ 	};
+ }
++function shouldAllowWindowsTrayDualRoleMetadataMismatch(params) {
++	const pairedRoles = Array.isArray(params.pairedRoles) ? params.pairedRoles : [];
++	if (!pairedRoles.includes("operator") || !pairedRoles.includes("node")) return false;
++	const claimedPlatform = normalizeDeviceMetadataForAuth(params.claimedPlatform);
++	const pairedPlatform = normalizeDeviceMetadataForAuth(params.pairedPlatform);
++	if (!(claimedPlatform === "windows" || claimedPlatform === "win32")) return false;
++	if (!(pairedPlatform === "windows" || pairedPlatform === "win32")) return false;
++	const claimedDeviceFamily = normalizeDeviceMetadataForAuth(params.claimedDeviceFamily);
++	const displayName = normalizeDeviceMetadataForAuth(params.displayName);
++	const isWindowsTrayOperator = params.clientId === GATEWAY_CLIENT_IDS.CLI && params.clientMode === GATEWAY_CLIENT_MODES.CLI && displayName === "openclaw windows tray" && (claimedDeviceFamily === "" || claimedDeviceFamily === "desktop" || claimedDeviceFamily === "windows");
++	const isWindowsTrayNode = params.clientId === GATEWAY_CLIENT_IDS.NODE_HOST && params.clientMode === GATEWAY_CLIENT_MODES.NODE && displayName.startsWith("windows node") && (claimedDeviceFamily === "" || claimedDeviceFamily === "windows" || claimedDeviceFamily === "desktop");
++	return isWindowsTrayOperator || isWindowsTrayNode;
++}
+ function attachGatewayWsMessageHandler(params) {
+ 	const { socket, upgradeReq, connId, remoteAddr, remotePort, localAddr, localPort, endpoint, forwardedFor, realIp, requestHost, requestOrigin, requestUserAgent, pluginSurfaceBaseUrl, pluginNodeCapabilities = [], connectNonce, getResolvedAuth, getRequiredSharedGatewaySessionGeneration, rateLimiter, browserRateLimiter, nodeReapprovalCoordinator, isStartupPending, gatewayMethods, events, extraHandlers, getMethodRegistry, buildRequestContext, refreshHealthSnapshot, send, close, isClosed, clearHandshakeTimer, getClient, setClient, setHandshakeState, setCloseCause, setLastFrameMeta, originCheckMetrics, logGateway, logHealth, logWsControl } = params;
+ 	const sendFrame = async (obj) => await new Promise((resolve, reject) => {
+@@ -1524,7 +1537,17 @@
+ 							pairedDeviceFamily
+ 						});
+ 						const { platformMismatch, deviceFamilyMismatch } = metadataPinning;
+-						if (platformMismatch || deviceFamilyMismatch) {
++						const pairedRolesForMetadata = listEffectivePairedDeviceRoles(paired);
++						const allowWindowsTrayDualRoleMetadataMismatch = shouldAllowWindowsTrayDualRoleMetadataMismatch({
++							clientId: connectParams.client.id,
++							clientMode: connectParams.client.mode,
++							displayName: connectParams.client.displayName,
++							claimedPlatform,
++							claimedDeviceFamily,
++							pairedPlatform,
++							pairedRoles: pairedRolesForMetadata
++						});
++						if ((platformMismatch || deviceFamilyMismatch) && !allowWindowsTrayDualRoleMetadataMismatch) {
+ 							if (!shouldAllowSilentLocalPairing({
+ 								locality: pairingLocality,
+ 								hasBrowserOriginHeader,
+@@ -1538,7 +1561,7 @@
+ 							if (metadataPinning.pinnedPlatform) connectParams.client.platform = metadataPinning.pinnedPlatform;
+ 							if (metadataPinning.pinnedDeviceFamily) connectParams.client.deviceFamily = metadataPinning.pinnedDeviceFamily;
+ 						}
+-						const pairedRoles = listEffectivePairedDeviceRoles(paired);
++						const pairedRoles = pairedRolesForMetadata;
+ 						const pairedScopes = resolvePairedAccessScopes(paired);
+ 						const allowedRoles = new Set(pairedRoles);
+ 						if (allowedRoles.size === 0) {
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/openclaw-tools-B0V1p3La.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/openclaw-tools-B0V1p3La.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/openclaw-tools-B0V1p3La.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/openclaw-tools-B0V1p3La.js	2026-06-25 19:54:57.613166946 +0000
+@@ -2861,7 +2861,7 @@
+ 	reason: Type.Optional(Type.String()),
+ 	continuationMessage: Type.Optional(Type.String()),
+ 	...gatewayCallOptionSchemaProperties(),
+-	path: Type.Optional(Type.String()),
++	path: Type.Optional(Type.String({ description: "Local file path for outbound media; preferred for local files and files >20MB." })),
+ 	raw: Type.Optional(Type.String()),
+ 	baseHash: Type.Optional(Type.String()),
+ 	replacePaths: Type.Optional(Type.Array(Type.String(), { maxItems: 256 })),
+@@ -6141,7 +6141,7 @@
+ 		message: Type.Optional(Type.String()),
+ 		effectId: Type.Optional(Type.String({ description: "Effect id/name for sendWithEffect." })),
+ 		effect: Type.Optional(Type.String({ description: "Alias for effectId." })),
+-		media: Type.Optional(Type.String({ description: "Media URL/path. data: use buffer." })),
++		media: Type.Optional(Type.String({ description: "Remote media URL or small inline media. For local files, especially >20MB, use filePath/path instead so the gateway does not inline bytes into the WebSocket payload." })),
+ 		filename: Type.Optional(Type.String()),
+ 		buffer: Type.Optional(Type.String({ description: "Base64 attachment payload; data URL ok." })),
+ 		contentType: Type.Optional(Type.String()),
+@@ -6154,10 +6154,10 @@
+ 				"video",
+ 				"file"
+ 			])),
+-			media: Type.Optional(Type.String()),
++			media: Type.Optional(Type.String({ description: "Remote media URL or small inline media. For local files, use filePath/path." })),
+ 			name: Type.Optional(Type.String()),
+ 			mimeType: Type.Optional(Type.String())
+-		}), { description: "Structured attachments; each entry uses media." })),
++		}), { description: "Structured attachments. For local files, use filePath/path rather than media to avoid inline WebSocket payloads." })),
+ 		replyTo: Type.Optional(Type.String()),
+ 		threadId: Type.Optional(Type.String()),
+ 		asVoice: Type.Optional(Type.Boolean()),
+diff -ruN /tmp/openclaw-2026.6.10-pack/package/dist/sessions-FHKRhZK9.js /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/sessions-FHKRhZK9.js
+--- /tmp/openclaw-2026.6.10-pack/package/dist/sessions-FHKRhZK9.js	1985-10-26 08:15:00.000000000 +0000
++++ /tmp/openclaw-2026.6.10-stage-20260625T195349/dist/sessions-FHKRhZK9.js	2026-06-25 20:09:02.510167191 +0000
+@@ -8,6 +8,7 @@
+ import { f as normalizeReasoningLevel, p as normalizeThinkLevel } from "./thinking-3cYUSC_N.js";
+ import { n as GATEWAY_CLIENT_IDS } from "./client-info-CcqJJIan.js";
+ import { t as ADMIN_SCOPE } from "./operator-scopes-CS3xdS-V.js";
++import { a as isOperatorUiClient } from "./message-channel-CtiNqfW0.js";
+ import { g as patchPluginSessionExtension } from "./registry-BmAQAf7L.js";
+ import { t as isPluginJsonValue } from "./host-hook-json-CRVrIqU9.js";
+ import { i as hasInternalHookListeners, m as triggerInternalHook, n as createInternalHookEvent } from "./internal-hooks-eGNEjFJ2.js";
+@@ -59,6 +60,24 @@
+ 		return isConfiguredSessionKey(entry?.spawnedBy) || isConfiguredSessionKey(entry?.parentSessionKey);
+ 	}));
+ }
++const SESSIONS_LIST_OPERATOR_UI_DEFAULT_LIMIT = 10;
++function isOpenClawWindowsTrayClient(client) {
++	const info = client?.connect?.client;
++	const displayName = normalizeOptionalString(info?.displayName);
++	const platform = normalizeOptionalLowercaseString(info?.platform);
++	const deviceFamily = normalizeOptionalLowercaseString(info?.deviceFamily);
++	const clientId = normalizeOptionalLowercaseString(info?.id);
++	const clientMode = normalizeOptionalLowercaseString(info?.mode);
++	return displayName === "OpenClaw Windows Tray" || clientId === "cli" && clientMode === "cli" && platform === "windows" && deviceFamily === "desktop";
++}
++function normalizeSessionsListParamsForClient(params) {
++	if (typeof params.params.limit === "number" && Number.isFinite(params.params.limit)) return params.params;
++	if (!isOperatorUiClient(params.client?.connect?.client) && !isOpenClawWindowsTrayClient(params.client)) return params.params;
++	return {
++		...params.params,
++		limit: SESSIONS_LIST_OPERATOR_UI_DEFAULT_LIMIT
++	};
++}
+ function inheritSessionRuntimeSelection(parentEntry) {
+ 	if (!parentEntry) return {};
+ 	return {
+@@ -510,9 +529,9 @@
+ 	}
+ }
+ const sessionsHandlers = {
+-	"sessions.list": async ({ params, respond, context }) => {
++	"sessions.list": async ({ params, respond, context, client }) => {
+ 		if (!assertValidParams(params, validateSessionsListParams, "sessions.list", respond)) return;
+-		const p = params;
++		const p = normalizeSessionsListParamsForClient({ params, client });
+ 		const cfg = context.getRuntimeConfig();
+ 		const configuredAgentsOnly = p.configuredAgentsOnly === true;
+ 		respond(true, await measureDiagnosticsTimelineSpan("gateway.sessions.list", async () => {

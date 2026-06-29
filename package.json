@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-threaded-mode-hotfix",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Portable OpenClaw 2026.6.10 Telegram Threaded Mode hotfix scripts.",
+  "type": "module",
+  "scripts": {
+    "check:syntax": "node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs && node --check scripts/check-threaded-mode-hotfixes.mjs",
+    "check:installed": "node scripts/check-threaded-mode-hotfixes.mjs",
+    "dry-run": "node scripts/apply-openclaw-2026-6-10-hotfixes.mjs --check"
+  },
+  "license": "MIT"
+}
+
