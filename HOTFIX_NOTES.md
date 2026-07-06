@@ -20,6 +20,9 @@ The production issue fixed by this layer:
 - Native slash-command updates can expose a Telegram private-topic id as
   `direct_messages_topic.topic_id` instead of `message_thread_id`, so `/new`
   could fail to re-arm auto-label in that topic unless the id was normalized.
+- The native slash path now resolves that id from both the normalized message
+  and the raw update, records it as the slash inbound thread id, and logs the
+  selected topic id for diagnosis.
 
 Operational rules:
 

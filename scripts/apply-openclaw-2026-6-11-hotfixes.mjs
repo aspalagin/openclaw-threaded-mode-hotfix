@@ -1595,6 +1595,33 @@ function resolveTelegramDirectMessagesTopicId(msg) {
 function resolveTelegramEffectiveMessageThreadId(msg) {
 \treturn msg?.message_thread_id ?? resolveTelegramDirectMessagesTopicId(msg);
 }
+function* iterateTelegramTopicSourceMessages(ctx, msg) {
+\tif (msg) yield msg;
+\tconst update = ctx?.update;
+\tconst candidates = [
+\t\tctx?.message,
+\t\tupdate?.message,
+\t\tupdate?.edited_message,
+\t\tupdate?.channel_post,
+\t\tupdate?.edited_channel_post,
+\t\tupdate?.callback_query?.message
+\t];
+\tfor (const candidate of candidates) if (candidate && candidate !== msg) yield candidate;
+}
+function resolveTelegramEffectiveMessageThreadIdFromContext(ctx, msg) {
+\tfor (const candidate of iterateTelegramTopicSourceMessages(ctx, msg)) {
+\t\tconst messageThreadId = resolveTelegramEffectiveMessageThreadId(candidate);
+\t\tif (messageThreadId != null) return messageThreadId;
+\t}
+}
+function formatTelegramNativeSlashTopicDebug(ctx, msg, effectiveThreadId) {
+\tconst rawMessage = ctx?.update?.message;
+\tconst msgThreadId = msg?.message_thread_id ?? "none";
+\tconst msgDirectTopicId = resolveTelegramDirectMessagesTopicId(msg) ?? "none";
+\tconst rawThreadId = rawMessage?.message_thread_id ?? "none";
+\tconst rawDirectTopicId = resolveTelegramDirectMessagesTopicId(rawMessage) ?? "none";
+\treturn \`msgThread=\${msgThreadId} msgDirectTopic=\${msgDirectTopicId} rawThread=\${rawThreadId} rawDirectTopic=\${rawDirectTopicId} effectiveThread=\${effectiveThreadId ?? "none"}\`;
+}
 const telegramAutoTopicLabelSessionBoundaries = /* @__PURE__ */ new Map();
 function buildTelegramAutoTopicLabelBoundaryKey(params) {
 \treturn [
@@ -1688,6 +1715,47 @@ function resolveTelegramEffectiveMessageThreadId(msg) {
 }
 const telegramAutoTopicLabelSessionBoundaries = /* @__PURE__ */ new Map();`,
       "Telegram auto topic label DM direct topic helper",
+    );
+  }
+  if (!next.includes("resolveTelegramEffectiveMessageThreadIdFromContext")) {
+    next = replaceOnce(
+      next,
+      `function resolveTelegramEffectiveMessageThreadId(msg) {
+\treturn msg?.message_thread_id ?? resolveTelegramDirectMessagesTopicId(msg);
+}
+const telegramAutoTopicLabelSessionBoundaries = /* @__PURE__ */ new Map();`,
+      `function resolveTelegramEffectiveMessageThreadId(msg) {
+\treturn msg?.message_thread_id ?? resolveTelegramDirectMessagesTopicId(msg);
+}
+function* iterateTelegramTopicSourceMessages(ctx, msg) {
+\tif (msg) yield msg;
+\tconst update = ctx?.update;
+\tconst candidates = [
+\t\tctx?.message,
+\t\tupdate?.message,
+\t\tupdate?.edited_message,
+\t\tupdate?.channel_post,
+\t\tupdate?.edited_channel_post,
+\t\tupdate?.callback_query?.message
+\t];
+\tfor (const candidate of candidates) if (candidate && candidate !== msg) yield candidate;
+}
+function resolveTelegramEffectiveMessageThreadIdFromContext(ctx, msg) {
+\tfor (const candidate of iterateTelegramTopicSourceMessages(ctx, msg)) {
+\t\tconst messageThreadId = resolveTelegramEffectiveMessageThreadId(candidate);
+\t\tif (messageThreadId != null) return messageThreadId;
+\t}
+}
+function formatTelegramNativeSlashTopicDebug(ctx, msg, effectiveThreadId) {
+\tconst rawMessage = ctx?.update?.message;
+\tconst msgThreadId = msg?.message_thread_id ?? "none";
+\tconst msgDirectTopicId = resolveTelegramDirectMessagesTopicId(msg) ?? "none";
+\tconst rawThreadId = rawMessage?.message_thread_id ?? "none";
+\tconst rawDirectTopicId = resolveTelegramDirectMessagesTopicId(rawMessage) ?? "none";
+\treturn \`msgThread=\${msgThreadId} msgDirectTopic=\${msgDirectTopicId} rawThread=\${rawThreadId} rawDirectTopic=\${rawDirectTopicId} effectiveThread=\${effectiveThreadId ?? "none"}\`;
+}
+const telegramAutoTopicLabelSessionBoundaries = /* @__PURE__ */ new Map();`,
+      "Telegram native slash raw topic helper",
     );
   }
   if (!next.includes("rememberTelegramAutoTopicLabelSessionBoundary")) {
@@ -1862,6 +1930,89 @@ async function isFirstTelegramUserMessageAfterSessionBoundary(params) {`,
       "Telegram auto topic label native slash boundary marker",
     );
   }
+  if (!next.includes("const { ctx, msg, bot } = params;")) {
+    next = replaceOnce(
+      next,
+      `async function resolveTelegramNativeCommandThreadContext(params) {
+\tconst { msg, bot } = params;
+\tconst chatId = msg.chat.id;
+\tconst isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+\tconst messageThreadId = resolveTelegramEffectiveMessageThreadId(msg);`,
+      `async function resolveTelegramNativeCommandThreadContext(params) {
+\tconst { ctx, msg, bot } = params;
+\tconst chatId = msg.chat.id;
+\tconst isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+\tconst messageThreadId = resolveTelegramEffectiveMessageThreadIdFromContext(ctx, msg);`,
+      "Telegram native slash topic context resolver",
+    );
+  }
+  if (!next.includes("const { ctx, msg, bot, cfg, accountId,")) {
+    next = replaceOnce(
+      next,
+      `async function resolveTelegramCommandAuth(params) {
+\tconst { msg, bot, cfg, accountId, telegramCfg, readChannelAllowFromStore, allowFrom, groupAllowFrom, useAccessGroups, resolveGroupPolicy, resolveTelegramGroupConfig, requireAuth } = params;
+\tconst { chatId, isGroup, isForum, messageThreadId, threadParams } = await resolveTelegramNativeCommandThreadContext({
+\t\tmsg,
+\t\tbot
+\t});`,
+      `async function resolveTelegramCommandAuth(params) {
+\tconst { ctx, msg, bot, cfg, accountId, telegramCfg, readChannelAllowFromStore, allowFrom, groupAllowFrom, useAccessGroups, resolveGroupPolicy, resolveTelegramGroupConfig, requireAuth } = params;
+\tconst { chatId, isGroup, isForum, messageThreadId, threadParams } = await resolveTelegramNativeCommandThreadContext({
+\t\tctx,
+\t\tmsg,
+\t\tbot
+\t});`,
+      "Telegram command auth topic context forwarding",
+    );
+  }
+  if (!next.includes("const { ctx, msg, runtimeCfg, isGroup, isForum,")) {
+    next = replaceOnce(
+      next,
+      `const resolveCommandRuntimeContext = async (params) => {
+\t\tconst { msg, runtimeCfg, isGroup, isForum, resolvedThreadId, senderId, topicAgentId } = params;
+\t\tconst chatId = msg.chat.id;
+\t\tconst messageThreadId = resolveTelegramEffectiveMessageThreadId(msg);`,
+      `const resolveCommandRuntimeContext = async (params) => {
+\t\tconst { ctx, msg, runtimeCfg, isGroup, isForum, resolvedThreadId, senderId, topicAgentId } = params;
+\t\tconst chatId = msg.chat.id;
+\t\tconst messageThreadId = resolveTelegramEffectiveMessageThreadIdFromContext(ctx, msg);`,
+      "Telegram native slash runtime topic context",
+    );
+  }
+  next = next.replaceAll(
+    "const auth = await resolveTelegramCommandAuth({\n\t\t\t\t\tmsg,",
+    "const auth = await resolveTelegramCommandAuth({\n\t\t\t\t\tctx,\n\t\t\t\t\tmsg,",
+  );
+  next = next.replaceAll(
+    "const runtimeContext = await resolveCommandRuntimeContext({\n\t\t\t\t\tmsg,",
+    "const runtimeContext = await resolveCommandRuntimeContext({\n\t\t\t\t\tctx,\n\t\t\t\t\tmsg,",
+  );
+  next = next.replaceAll(
+    "const { threadParams } = await resolveTelegramNativeCommandThreadContext({\n\t\t\t\tmsg,\n\t\t\t\tbot",
+    "const { threadParams } = await resolveTelegramNativeCommandThreadContext({\n\t\t\t\tctx,\n\t\t\t\tmsg,\n\t\t\t\tbot",
+  );
+  if (!next.includes("telegram native slash topic:")) {
+    next = replaceOnce(
+      next,
+      `\t\t\t\tconst threadParams = buildTelegramThreadParams(threadSpec) ?? {};
+\t\t\t\tconst originatingTo = buildTelegramRoutingTarget(chatId, threadSpec);
+\t\t\t\tconst executionCfg = getRuntimeConfigSnapshot() ?? cfg;`,
+      `\t\t\t\tconst threadParams = buildTelegramThreadParams(threadSpec) ?? {};
+\t\t\t\tconst originatingTo = buildTelegramRoutingTarget(chatId, threadSpec);
+\t\t\t\tconst nativeSlashThreadId = threadSpec.id != null ? String(threadSpec.id) : void 0;
+\t\t\t\tlogVerbose(\`telegram native slash topic: command=/\${normalizedCommandName} \${formatTelegramNativeSlashTopicDebug(ctx, msg, threadSpec.id)} scope=\${threadSpec.scope} originatingTo=\${originatingTo}\`);
+\t\t\t\tconst executionCfg = getRuntimeConfigSnapshot() ?? cfg;`,
+      "Telegram native slash topic diagnostics",
+    );
+  }
+  next = next.replaceAll(
+    "MessageThreadId: threadSpec.id,\n\t\t\t\t\tIsForum: isForum,",
+    "MessageThreadId: nativeSlashThreadId,\n\t\t\t\t\tTransportThreadId: nativeSlashThreadId,\n\t\t\t\t\tIsForum: isForum,",
+  );
+  next = next.replaceAll(
+    "threadId: threadSpec.id,\n\t\t\t\t\t\tmessageId: msg.message_id,",
+    "threadId: nativeSlashThreadId,\n\t\t\t\t\t\tmessageId: msg.message_id,",
+  );
   next = next.replaceAll(
     "const messageThreadId = msg.message_thread_id;",
     "const messageThreadId = resolveTelegramEffectiveMessageThreadId(msg);",

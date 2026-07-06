@@ -18,7 +18,8 @@ before running it on a production host.
   user message in the same topic.
 - Auto-label also normalizes Telegram private-topic ids from
   `direct_messages_topic.topic_id` when Telegram does not populate
-  `message_thread_id` on native slash-command updates.
+  `message_thread_id` on native slash-command updates, including the raw update
+  object used before slash acknowledgements are delivered.
 - Final replies persisted as `pendingFinalDelivery` are recovered after
   restarts instead of being silently lost.
 - The exact tested apply script also includes adjacent generic fixes from the
