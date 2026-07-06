@@ -1,8 +1,8 @@
 # OpenClaw Telegram Threaded Mode hotfix
 
-Portable hotfix layer for OpenClaw `2026.6.10` that keeps Telegram DM topics
-working as separate OpenClaw sessions and delivers replies back into the same
-Telegram topic.
+Portable hotfix layer for OpenClaw Telegram Threaded Mode. The current scripts
+target OpenClaw `2026.6.11`; legacy `2026.6.10` scripts remain in the repo for
+older installs.
 
 This repository is an operator patch, not an upstream OpenClaw release. It
 patches built `dist/*.js` bundles in an installed OpenClaw package, so review it
@@ -13,6 +13,9 @@ before running it on a production host.
 - Telegram private bot topics get separate OpenClaw session keys.
 - Telegram topic replies use Bot API `message_thread_id`.
 - Rich Telegram delivery remains enabled inside DM topics.
+- Telegram DM topic auto-label re-arms after `/new` and `/reset`: `/new text`
+  labels from `text` immediately, while bare `/new` waits for the next normal
+  user message in the same topic.
 - Final replies persisted as `pendingFinalDelivery` are recovered after
   restarts instead of being silently lost.
 - The exact tested apply script also includes adjacent generic fixes from the
@@ -21,7 +24,7 @@ before running it on a production host.
 
 ## Requirements
 
-- OpenClaw `2026.6.10`.
+- OpenClaw `2026.6.11` for the current scripts.
 - Node.js available on the OpenClaw host.
 - A normal OpenClaw install, usually at `/usr/lib/node_modules/openclaw`.
 - Telegram Threaded Mode / topics enabled for the bot in BotFather.
@@ -48,13 +51,15 @@ Check syntax:
 ```bash
 node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs
 node --check scripts/check-threaded-mode-hotfixes.mjs
+node --check scripts/apply-openclaw-2026-6-11-hotfixes.mjs
+node --check scripts/check-openclaw-2026-6-11-hotfixes.mjs
 ```
 
 Dry-run against the installed package:
 
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
-  node scripts/apply-openclaw-2026-6-10-hotfixes.mjs --check
+  node scripts/apply-openclaw-2026-6-11-hotfixes.mjs --check
 ```
 
 Apply:
@@ -62,14 +67,14 @@ Apply:
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
   OPENCLAW_HOTFIX_BACKUP_DIR=/root/openclaw-backups/openclaw-threaded-mode-hotfix \
-  node scripts/apply-openclaw-2026-6-10-hotfixes.mjs
+  node scripts/apply-openclaw-2026-6-11-hotfixes.mjs
 ```
 
 Validate signatures:
 
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
-  node scripts/check-threaded-mode-hotfixes.mjs
+  node scripts/check-openclaw-2026-6-11-hotfixes.mjs
 ```
 
 Restart OpenClaw Gateway from a shell you control:
@@ -89,6 +94,10 @@ external shell.
 3. Confirm the reply lands in the same topic, not in the root DM.
 4. Send a second prompt in a different topic and confirm it uses a separate
    conversation/session.
+5. Send `/new короткая тема` inside an existing DM topic and confirm the topic
+   is renamed from the tail text after the gateway restart.
+6. Send bare `/new`, then a normal prompt, and confirm the topic is renamed from
+   that prompt.
 
 Helpful checks:
 
@@ -102,7 +111,7 @@ openclaw sessions list --json | jq '.sessions[] | select(.sessionKey | contains(
 The apply script writes backups before changing files. By default they go under:
 
 ```text
-/root/openclaw-backups/openclaw-2026.6.10-hotfixes/
+/root/openclaw-backups/openclaw-2026.6.11-hotfixes/
 ```
 
 If you set `OPENCLAW_HOTFIX_BACKUP_DIR`, use that path instead. To roll back,
@@ -120,3 +129,5 @@ restore your package-level backup.
 - Keep `to` as `telegram:<chatId>` and store the topic id as thread metadata.
 - The composite key `...:thread:<chatId>:<topicId>` is an OpenClaw session
   identity, not a Telegram delivery target.
+- The auto-label patch is intentionally scoped to Telegram DM topics. It does
+  not rename flat DMs or normal group/forum topics.
