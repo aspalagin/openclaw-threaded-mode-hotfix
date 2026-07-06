@@ -17,6 +17,9 @@ The production issue fixed by this layer:
   thread-session. After `/new`, the acknowledgement itself marked the OpenClaw
   session as having assistant output, so the next substantive user message no
   longer renamed the Telegram topic.
+- Native slash-command updates can expose a Telegram private-topic id as
+  `direct_messages_topic.topic_id` instead of `message_thread_id`, so `/new`
+  could fail to re-arm auto-label in that topic unless the id was normalized.
 
 Operational rules:
 
@@ -27,6 +30,9 @@ Operational rules:
 - Treat `/new` and `/reset` as session-boundary commands for auto-labeling:
   `/new text` labels immediately from `text`; bare `/new` labels from the first
   normal user message that follows in the same DM topic.
+- Use `direct_messages_topic.topic_id` only as a private-topic id fallback for
+  command/message context. Do not use `direct_messages_topic_id` for rich
+  message delivery in this OpenClaw path.
 - Run the checker after every OpenClaw package update.
 
 This repository intentionally omits host-specific production notes, node ids,

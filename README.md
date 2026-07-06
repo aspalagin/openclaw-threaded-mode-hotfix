@@ -16,6 +16,9 @@ before running it on a production host.
 - Telegram DM topic auto-label re-arms after `/new` and `/reset`: `/new text`
   labels from `text` immediately, while bare `/new` waits for the next normal
   user message in the same topic.
+- Auto-label also normalizes Telegram private-topic ids from
+  `direct_messages_topic.topic_id` when Telegram does not populate
+  `message_thread_id` on native slash-command updates.
 - Final replies persisted as `pendingFinalDelivery` are recovered after
   restarts instead of being silently lost.
 - The exact tested apply script also includes adjacent generic fixes from the
@@ -126,6 +129,9 @@ restore your package-level backup.
 - The patch intentionally uses `message_thread_id` for private bot topics.
 - Do not rewrite DM topic delivery to `direct_messages_topic_id`; in the tested
   OpenClaw/Telegram path that sends rich replies to the root DM.
+- The `direct_messages_topic.topic_id` fallback is only for recognizing which
+  private topic a native slash-command belongs to; delivery still stays on
+  `message_thread_id`.
 - Keep `to` as `telegram:<chatId>` and store the topic id as thread metadata.
 - The composite key `...:thread:<chatId>:<topicId>` is an OpenClaw session
   identity, not a Telegram delivery target.
