@@ -1887,7 +1887,7 @@ async function isFirstTelegramUserMessageAfterSessionBoundary(params) {`,
 \t\t\t\t}
 \t\t\t\tif (!isCurrentSessionBoundaryCommand) try {
 \t\t\t\t\tisFirstUserMessageAfterSessionBoundary = await isFirstTelegramUserMessageAfterSessionBoundary({
-\t\t\t\t\t\tmessageCache,
+\t\t\t\t\t\tmessageCache: createTelegramMessageCache({ scope: resolveTelegramMessageCacheScope(resolveStorePath(cfg.session?.store)) }),
 \t\t\t\t\t\taccountId: route.accountId,
 \t\t\t\t\t\tchatId,
 \t\t\t\t\t\tthreadId: threadSpec.id,
@@ -2028,6 +2028,301 @@ async function isFirstTelegramUserMessageAfterSessionBoundary(params) {`,
   next = next.replaceAll(
     "messageThreadId: normalizedMsg.message_thread_id",
     "messageThreadId: resolveTelegramEffectiveMessageThreadId(normalizedMsg)",
+  );
+  // 2026-07-06: buildPromptContextForMessage session-state call (a manual dist edit
+  // left a bare `messageThreadId,` shorthand here -> ReferenceError on every DM reply).
+  next = next.replaceAll(
+    "messageThreadId: msg.message_thread_id,\n\t\t\t\tbotHasTopicsEnabled: resolveTelegramBotHasTopicsEnabled(ctx.me),",
+    "messageThreadId: resolveTelegramEffectiveMessageThreadId(msg),\n\t\t\t\tbotHasTopicsEnabled: resolveTelegramBotHasTopicsEnabled(ctx.me),",
+  );
+  // ===== 2026-07-10 v3: /new boundary переживает рестарт gateway + видимая диагностика =====
+  // Root cause "тема так и не переименовалась": native slash /new писал границу сессии только
+  // в in-memory Map (telegramAutoTopicLabelSessionBoundaries); любой рестарт gateway между /new
+  // и первым обычным сообщением стирал её, а в persistent message cache (plugin_state_entries,
+  // namespace telegram.message-cache) native slash сообщения не записывались вовсе — поэтому
+  // persistent fallback в isFirstTelegramUserMessageAfterSessionBoundary всегда видел boundary=null.
+  // v3 записывает bare /new|/reset в общий persistent message cache тем же bucket'ом, что и
+  // обычные inbound-сообщения (createTelegramMessageCache + resolveTelegramMessageCacheScope),
+  // и переводит ключевые логи auto-label с гаснущего logVerbose на console.error.
+  if (!next.includes("[hotfix][auto-topic-label] boundary persisted")) {
+    next = replaceOnce(
+      next,
+      `\t\t\t\t\tif (!isGroup && threadSpec.scope === "dm" && threadSpec.id != null && isTelegramSessionBoundaryCommandText(prompt) && !resolveTelegramSessionBoundaryTopicLabelTail(prompt).trim()) rememberTelegramAutoTopicLabelSessionBoundary({
+\t\t\t\t\t\taccountId: route.accountId,
+\t\t\t\t\t\tchatId,
+\t\t\t\t\t\tthreadId: nativeSlashThreadId,
+\t\t\t\t\t\tmessageId: msg.message_id,
+\t\t\t\t\t\tsenderId: senderId || void 0
+\t\t\t\t\t});`,
+      `\t\t\t\t\tif (!isGroup && threadSpec.scope === "dm" && threadSpec.id != null && isTelegramSessionBoundaryCommandText(prompt) && !resolveTelegramSessionBoundaryTopicLabelTail(prompt).trim()) {
+\t\t\t\t\t\trememberTelegramAutoTopicLabelSessionBoundary({
+\t\t\t\t\t\t\taccountId: route.accountId,
+\t\t\t\t\t\t\tchatId,
+\t\t\t\t\t\t\tthreadId: nativeSlashThreadId,
+\t\t\t\t\t\t\tmessageId: msg.message_id,
+\t\t\t\t\t\t\tsenderId: senderId || void 0
+\t\t\t\t\t\t});
+\t\t\t\t\t\ttry {
+\t\t\t\t\t\t\tawait createTelegramMessageCache({ scope: resolveTelegramMessageCacheScope(resolveStorePath(executionCfg.session?.store)) }).record({
+\t\t\t\t\t\t\t\taccountId: route.accountId,
+\t\t\t\t\t\t\t\tchatId,
+\t\t\t\t\t\t\t\tmsg,
+\t\t\t\t\t\t\t\t...nativeSlashThreadId != null ? { threadId: nativeSlashThreadId } : {}
+\t\t\t\t\t\t\t});
+\t\t\t\t\t\t\tconsole.error(\`[hotfix][auto-topic-label] boundary persisted chat=\${chatId} thread=\${nativeSlashThreadId ?? "none"} msg=\${msg.message_id}\`);
+\t\t\t\t\t\t} catch (err) {
+\t\t\t\t\t\t\tconsole.error(\`[hotfix][auto-topic-label] boundary persist failed: \${String(err)}\`);
+\t\t\t\t\t\t}
+\t\t\t\t\t}`,
+      "Telegram auto topic label persistent boundary record",
+    );
+  }
+  if (!next.includes("[hotfix][auto-topic-label] telegram native slash topic:")) {
+    next = replaceOnce(
+      next,
+      "logVerbose(\`telegram native slash topic: command=/\${normalizedCommandName} \${formatTelegramNativeSlashTopicDebug(ctx, msg, threadSpec.id)} scope=\${threadSpec.scope} originatingTo=\${originatingTo}\`);",
+      "console.error(\`[hotfix][auto-topic-label] telegram native slash topic: command=/\${normalizedCommandName} \${formatTelegramNativeSlashTopicDebug(ctx, msg, threadSpec.id)} scope=\${threadSpec.scope} originatingTo=\${originatingTo}\`);",
+      "Telegram native slash topic visible diagnostics",
+    );
+  }
+  if (!next.includes("[hotfix][auto-topic-label] decision")) {
+    next = replaceOnce(
+      next,
+      `\t\tconst shouldAutoTopicLabel = isDmTopic && ((!isCurrentSessionBoundaryCommand && isFirstTurnInSession) || isFirstUserMessageAfterSessionBoundary || Boolean(sessionBoundaryTopicLabelTail.trim()));`,
+      `\t\tconst shouldAutoTopicLabel = isDmTopic && ((!isCurrentSessionBoundaryCommand && isFirstTurnInSession) || isFirstUserMessageAfterSessionBoundary || Boolean(sessionBoundaryTopicLabelTail.trim()));
+\t\tif (isDmTopic) console.error(\`[hotfix][auto-topic-label] decision chat=\${chatId} thread=\${threadSpec.id ?? "none"} firstTurn=\${isFirstTurnInSession} afterBoundary=\${isFirstUserMessageAfterSessionBoundary} tail=\${Boolean(sessionBoundaryTopicLabelTail.trim())} should=\${shouldAutoTopicLabel}\`);`,
+      "Telegram auto topic label decision diagnostics",
+    );
+  }
+  if (!next.includes("[hotfix][auto-topic-label] renamed topic")) {
+    next = replaceOnce(
+      next,
+      `logVerbose("auto-topic-label: LLM returned empty label");`,
+      `console.error("[hotfix][auto-topic-label] LLM returned empty label");`,
+      "auto-topic-label empty label visible log",
+    );
+    next = replaceOnce(
+      next,
+      "logVerbose(\`auto-topic-label: generated label (len=\${label.length})\`);",
+      "console.error(\`[hotfix][auto-topic-label] generated label (len=\${label.length})\`);",
+      "auto-topic-label generated visible log",
+    );
+    next = replaceOnce(
+      next,
+      "logVerbose(\`auto-topic-label: renamed topic \${chatId}/\${topicThreadId}\`);",
+      "console.error(\`[hotfix][auto-topic-label] renamed topic \${chatId}/\${topicThreadId}\`);",
+      "auto-topic-label renamed visible log",
+    );
+    next = replaceOnce(
+      next,
+      "logVerbose(\`auto-topic-label: failed: \${formatErrorMessage(err)}\`);",
+      "console.error(\`[hotfix][auto-topic-label] failed: \${formatErrorMessage(err)}\`);",
+      "auto-topic-label failed visible log",
+    );
+    next = replaceOnce(
+      next,
+      "logVerbose(\`auto-topic-label: session boundary lookup error: \${formatErrorMessage(err)}\`);",
+      "console.error(\`[hotfix][auto-topic-label] session boundary lookup error: \${formatErrorMessage(err)}\`);",
+      "auto-topic-label boundary lookup error visible log",
+    );
+  }
+  // 2026-07-10 v3: ранее вставленный boundary lookup ссылался на `messageCache`, которого нет
+  // в scope dispatch-функции (кэш создаётся в registerTelegramHandlers) -> ReferenceError
+  // "messageCache is not defined" на каждом DM-topic сообщении, afterBoundary всегда false.
+  // Кэш создаём на месте: bucket у createTelegramMessageCache общий по scope, так что это
+  // тот же persistent кэш, что и у обычных inbound-сообщений. Обе таб-глубины покрывают
+  // разошедшиеся варианты ранних вставок.
+  for (const tabs of ["\t\t\t\t\t", "\t\t\t\t\t\t"]) {
+    const legacyLookupCacheRef = `isFirstUserMessageAfterSessionBoundary = await isFirstTelegramUserMessageAfterSessionBoundary({\n${tabs}messageCache,`;
+    if (next.includes(legacyLookupCacheRef)) {
+      next = next.replace(
+        legacyLookupCacheRef,
+        `isFirstUserMessageAfterSessionBoundary = await isFirstTelegramUserMessageAfterSessionBoundary({\n${tabs}messageCache: createTelegramMessageCache({ scope: resolveTelegramMessageCacheScope(resolveStorePath(cfg.session?.store)) }),`,
+      );
+    }
+  }
+  // 2026-07-10 v4: прежняя проверка сравнивала текущее сообщение с ПОСЛЕДНИМ user-сообщением
+  // после boundary — а последнее сообщение <= текущего это всегда само текущее, т.е. проверка
+  // была true для каждого сообщения, пока /new лежит в кэше (после v3 persist это навсегда) ->
+  // тема переименовывалась на каждом сообщении. Правильная семантика: текущее сообщение —
+  // «первое после boundary», только если МЕЖДУ boundary и текущим (строго) нет другого
+  // непустого не-boundary user-сообщения того же отправителя.
+  if (!next.includes("hotfix v4: only the first user message after the boundary")) {
+    next = replaceOnce(
+      next,
+      `\t\tmatches: (node) => {
+\t\t\tif (!node.messageId || compareTelegramTopicLabelMessageIds(node.messageId, boundary.messageId) <= 0) return false;
+\t\t\tif (params.senderId && node.senderId !== params.senderId) return false;`,
+      `\t\tmatches: (node) => {
+\t\t\tif (!node.messageId || compareTelegramTopicLabelMessageIds(node.messageId, boundary.messageId) <= 0) return false;
+\t\t\tif (compareTelegramTopicLabelMessageIds(node.messageId, params.messageId) >= 0) return false;
+\t\t\tif (params.senderId && node.senderId !== params.senderId) return false;`,
+      "auto-topic-label prior-message window",
+    );
+    next = replaceOnce(
+      next,
+      `\treturn latestUserMessage?.messageId === params.messageId || consumeTelegramAutoTopicLabelSessionBoundary(params);
+}`,
+      `\t/* hotfix v4: only the first user message after the boundary may relabel */
+\tif (latestUserMessage?.messageId) return false;
+\tconsumeTelegramAutoTopicLabelSessionBoundary(params);
+\treturn true;
+}`,
+      "auto-topic-label first-only relabel",
+    );
+  }
+  return next;
+}
+
+function patchConversationLabelModelAuthFallback(source) {
+  if (source.includes("hotfix: conversation-label-model-auth-fallback")) return source;
+  const startMarker = "/** Generates a bounded human-readable label for a session, or null on failure. */";
+  const start = source.indexOf(startMarker);
+  if (start === -1) throw new Error("missing conversation-label generator doc marker");
+  const end = source.indexOf("\n//#endregion", start);
+  if (end === -1) throw new Error("missing conversation-label generator region end");
+  const original = source.slice(start, end);
+  if (!original.includes("async function generateConversationLabel(params)") || !original.includes("requireApiKey(runtimeAuth, modelRef.provider)")) {
+    throw new Error("unexpected conversation-label generator body shape");
+  }
+  const replacement = `/** Generates a bounded human-readable label for a session, or null on failure. */
+//#region hotfix: conversation-label-model-auth-fallback (2026-07-09)
+function resolveConversationLabelModelCandidates(cfg, primary) {
+\tconst candidates = [];
+\tconst push = (provider, model) => {
+\t\tif (!provider || !model) return;
+\t\tif (candidates.some((candidate) => candidate.provider === provider && candidate.model === model)) return;
+\t\tcandidates.push({ provider, model });
+\t};
+\tpush(primary.provider, primary.model);
+\tconst fallbacks = cfg?.agents?.defaults?.model?.fallbacks;
+\tif (Array.isArray(fallbacks)) for (const raw of fallbacks) {
+\t\tif (typeof raw !== "string") continue;
+\t\tconst trimmed = raw.trim();
+\t\tconst slash = trimmed.indexOf("/");
+\t\tif (slash <= 0 || slash >= trimmed.length - 1) continue;
+\t\tpush(trimmed.slice(0, slash), trimmed.slice(slash + 1));
+\t}
+\treturn candidates;
+}
+async function generateConversationLabelWithModel(params) {
+\tconst { candidate, userMessage, prompt, cfg, agentDir, maxLength } = params;
+\tconst resolved = await resolveModelAsync(candidate.provider, candidate.model, agentDir, cfg);
+\tif (!resolved.model) {
+\t\tlogVerbose(\`conversation-label-generator: failed to resolve model \${candidate.provider}/\${candidate.model}\`);
+\t\treturn null;
+\t}
+\tconst completionModel = prepareModelForSimpleCompletion({
+\t\tmodel: resolved.model,
+\t\tcfg
+\t});
+\tconst runtimeAuth = await getRuntimeAuthForModel({
+\t\tmodel: completionModel,
+\t\tcfg,
+\t\tworkspaceDir: agentDir
+\t});
+\tconst apiKey = requireApiKey(runtimeAuth, candidate.provider);
+\tconst runtimeModel = applyPreparedRuntimeAuthToModel(completionModel, runtimeAuth);
+\tconst controller = new AbortController();
+\tconst timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+\ttry {
+\t\tconst result = await completeSimple(runtimeModel, {
+\t\t\tsystemPrompt: prompt,
+\t\t\tmessages: [{
+\t\t\t\trole: "user",
+\t\t\t\tcontent: userMessage,
+\t\t\t\ttimestamp: Date.now()
+\t\t\t}]
+\t\t}, {
+\t\t\tapiKey,
+\t\t\tmaxTokens: 100,
+\t\t\t...isCodexSimpleCompletionModel(runtimeModel) ? {} : { temperature: .3 },
+\t\t\tsignal: controller.signal
+\t\t});
+\t\tconst errorMessage = extractSimpleCompletionError(result);
+\t\tif (errorMessage) {
+\t\t\tlogVerbose(\`conversation-label-generator: completion failed (\${candidate.provider}/\${candidate.model}): \${errorMessage}\`);
+\t\t\treturn null;
+\t\t}
+\t\tconst text = result.content.filter(isTextContentBlock).map((block) => block.text).join("").trim();
+\t\tif (!text) return null;
+\t\treturn text.slice(0, maxLength);
+\t} finally {
+\t\tclearTimeout(timeout);
+\t}
+}
+async function generateConversationLabel(params) {
+\tconst { userMessage, prompt, cfg, agentId, agentDir } = params;
+\tconst maxLength = typeof params.maxLength === "number" && Number.isFinite(params.maxLength) && params.maxLength > 0 ? Math.floor(params.maxLength) : DEFAULT_MAX_LABEL_LENGTH;
+\tconst primary = resolveDefaultModelForAgent({
+\t\tcfg,
+\t\tagentId
+\t});
+\tconst candidates = resolveConversationLabelModelCandidates(cfg, primary);
+\tconst maxAttempts = Math.min(candidates.length, 6);
+\tfor (let index = 0; index < maxAttempts; index++) {
+\t\tconst candidate = candidates[index];
+\t\ttry {
+\t\t\tconst label = await generateConversationLabelWithModel({
+\t\t\t\tcandidate,
+\t\t\t\tuserMessage,
+\t\t\t\tprompt,
+\t\t\t\tcfg,
+\t\t\t\tagentDir,
+\t\t\t\tmaxLength
+\t\t\t});
+\t\t\tif (label) {
+\t\t\t\tif (index > 0) logVerbose(\`conversation-label-generator: labeled via fallback model \${candidate.provider}/\${candidate.model}\`);
+\t\t\t\treturn label;
+\t\t\t}
+\t\t} catch (err) {
+\t\t\tlogVerbose(\`conversation-label-generator: \${candidate.provider}/\${candidate.model} failed: \${err instanceof Error ? err.message : String(err)}\`);
+\t\t}
+\t}
+\tlogVerbose(\`conversation-label-generator: no usable model produced a label (tried \${maxAttempts} of \${candidates.length} candidates)\`);
+\treturn null;
+}
+//#endregion hotfix`;
+  return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
+}
+
+// conversation-label-prompt-inline (2026-07-10): codex responses-модели (gpt-5.6 через
+// app-server) не доносят systemPrompt до модели — генератор label возвращал разговорный
+// ответ ассистента на userMessage, обрезанный slice(0,128), и DM-тема получала мусорное имя
+// (наблюдалось: «Я не имею доступа к предыдущим разговорам…**Чт», generated len=128).
+// Фикс: инструкция встраивается прямо в user-сообщение (работает для всех моделей, для
+// system-совместимых просто дублирует), а из ответа берётся только первая непустая строка
+// без обрамляющих кавычек/markdown.
+function patchConversationLabelPromptInline(source) {
+  if (source.includes("hotfix: conversation-label-prompt-inline")) return source;
+  let next = source;
+  next = replaceOnce(
+    next,
+    `\t\t\tmessages: [{
+\t\t\t\trole: "user",
+\t\t\t\tcontent: userMessage,
+\t\t\t\ttimestamp: Date.now()
+\t\t\t}]`,
+    `\t\t\t/* hotfix: conversation-label-prompt-inline (2026-07-10) */
+\t\t\tmessages: [{
+\t\t\t\trole: "user",
+\t\t\t\tcontent: \`\${prompt}\\n\\nMessage:\\n"""\\n\${userMessage}\\n"""\\n\\nTopic label:\`,
+\t\t\t\ttimestamp: Date.now()
+\t\t\t}]`,
+    "conversation label inline prompt",
+  );
+  next = replaceOnce(
+    next,
+    `\t\tconst text = result.content.filter(isTextContentBlock).map((block) => block.text).join("").trim();
+\t\tif (!text) return null;
+\t\treturn text.slice(0, maxLength);`,
+    `\t\tconst rawText = result.content.filter(isTextContentBlock).map((block) => block.text).join("").trim();
+\t\tif (!rawText) return null;
+\t\tconst firstLine = rawText.split(/\\r?\\n/).map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+\t\tconst text = firstLine.replace(/^["'«»“”\`*#\\s]+/, "").replace(/["'«»“”\`*\\s]+$/, "").trim();
+\t\tif (!text) return null;
+\t\treturn text.slice(0, maxLength);`,
+    "conversation label first-line sanitize",
   );
   return next;
 }
@@ -2266,6 +2561,7 @@ function main() {
     toolResultTruncation: findOne(files, "tool-result truncation bundle", ["function buildAggregateToolResultReplacements", "function clearToolResultText", "aggregateBudgetChars"]),
     replyRunState: findOne(files, "reply run state bundle", ["function createReplyOperation", "openclaw.replyRunRegistry", "function forceClearReplyRunBySessionId"]),
     requestTimeouts: findOne(files, "Telegram request timeouts bundle", ["TELEGRAM_REQUEST_TIMEOUTS_MS = {", "function resolveTelegramRequestTimeoutMs("]),
+    conversationLabelGenerator: findOne(files, "conversation label generator bundle", ["conversation-label-generator", "prepareModelForSimpleCompletion", "generateConversationLabel"]),
   };
   // 2026.6.11: Windows Tray патчи исключены (Tray удалён из 2026.6.11):
   //   - windows-tray-chat-history-limit (patchChat) — N/A
@@ -2308,6 +2604,8 @@ function main() {
     applyFile(targets.dispatch, "reply-diag-markers-dispatch", patchReplyDiagMarkersDispatch),
     applyFile(targets.dispatch, "telegram-progress-commentary-draft-only", patchTelegramProgressCommentaryDraftOnly),
     applyFile(targets.bot, "telegram-auto-topic-label-after-new", patchTelegramAutoTopicLabelAfterNew),
+    applyFile(targets.conversationLabelGenerator, "conversation-label-model-auth-fallback", patchConversationLabelModelAuthFallback),
+    applyFile(targets.conversationLabelGenerator, "conversation-label-prompt-inline", patchConversationLabelPromptInline),
   ];
   const changed = results.filter((result) => result.changed).length;
   console.log(`[openclaw-2026.6.11-hotfixes] complete changed=${changed} packageRoot=${packageRoot}`);

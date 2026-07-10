@@ -23,6 +23,29 @@ The production issue fixed by this layer:
 - The native slash path now resolves that id from both the normalized message
   and the raw update, records it as the slash inbound thread id, and logs the
   selected topic id for diagnosis.
+- The bare `/new`/`/reset` session boundary lived only in an in-memory Map, so
+  any gateway restart between `/new` and the next user message erased it, and
+  native slash messages never reached the persistent Telegram message cache —
+  the disk-backed boundary lookup always came back empty. The native slash
+  handler now records the boundary command into the shared persistent message
+  cache, and the key auto-label diagnostics are emitted as visible
+  `[hotfix][auto-topic-label]` console lines instead of swallowed verbose logs.
+- The inserted boundary lookup referenced a `messageCache` binding that does
+  not exist in the dispatch-function scope, throwing `messageCache is not
+  defined` on every DM-topic message; the lookup now builds the cache in place
+  (the bucket is shared, so it is the same persistent cache).
+- The "first user message after the boundary" check compared the current
+  message against the latest user message at-or-before itself — which is
+  always the current message — so once the boundary persisted, the topic was
+  renamed on every reply. The check now looks for a prior non-empty
+  non-boundary user message strictly between the boundary and the current
+  message and allows the rename only when none exists.
+- Codex responses models (for example `gpt-5.6` via the codex app-server) do
+  not receive `systemPrompt`, so the conversation/topic label generator got a
+  conversational reply truncated to the length limit instead of a short label.
+  The label instruction is now embedded into the user message itself and only
+  the first non-empty line of the reply is used, stripped of wrapping
+  quotes/markdown (`conversation-label-prompt-inline`).
 
 Operational rules:
 
