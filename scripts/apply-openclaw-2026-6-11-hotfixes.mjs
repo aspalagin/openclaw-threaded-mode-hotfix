@@ -7,6 +7,7 @@ const packageRoot = process.env.OPENCLAW_PACKAGE_ROOT || "/usr/lib/node_modules/
 const distDir = path.join(packageRoot, "dist");
 const backupRoot = process.env.OPENCLAW_HOTFIX_BACKUP_DIR || "/root/openclaw-backups/openclaw-2026.6.11-hotfixes";
 const dryRun = process.argv.includes("--dry-run") || process.argv.includes("--check");
+const dryRunContents = new Map();
 
 function fail(message) {
   console.error(`[openclaw-2026.6.11-hotfixes] ${message}`);
@@ -59,10 +60,21 @@ function findOneAny(files, label, needleSets) {
 }
 
 function replaceOnce(source, before, after, label) {
-  const index = source.indexOf(before);
+  let needle = before;
+  let index = source.indexOf(needle);
+  if (index === -1) {
+    const oneLessIndent = before.replace(/(^|\n)\t/g, "$1");
+    if (oneLessIndent !== before) {
+      const fallbackIndex = source.indexOf(oneLessIndent);
+      if (fallbackIndex !== -1) {
+        needle = oneLessIndent;
+        index = fallbackIndex;
+      }
+    }
+  }
   if (index === -1) throw new Error(`missing ${label}`);
-  if (source.indexOf(before, index + before.length) !== -1) throw new Error(`ambiguous ${label}`);
-  return `${source.slice(0, index)}${after}${source.slice(index + before.length)}`;
+  if (source.indexOf(needle, index + needle.length) !== -1) throw new Error(`ambiguous ${label}`);
+  return `${source.slice(0, index)}${after}${source.slice(index + needle.length)}`;
 }
 
 function insertBefore(source, before, insert, label) {
@@ -88,13 +100,14 @@ function backupFile(file, before) {
 }
 
 function applyFile(file, label, patch) {
-  const before = read(file);
+  const before = dryRun ? (dryRunContents.get(file) ?? read(file)) : read(file);
   const after = patch(before);
   if (after === before) {
     console.log(`[openclaw-2026.6.11-hotfixes] ${label}: ok`);
     return { label, file, changed: false };
   }
   if (dryRun) {
+    dryRunContents.set(file, after);
     console.log(`[openclaw-2026.6.11-hotfixes] ${label}: would patch ${file}`);
     return { label, file, changed: true };
   }

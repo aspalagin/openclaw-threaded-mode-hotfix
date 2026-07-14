@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible issue with the supported release
+title: "Bug: "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: OpenClaw version
+      description: Only 2026.6.11 is supported by this release.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction steps
+      description: Remove credentials, chat identifiers, and private paths.
+    validations:
+      required: true

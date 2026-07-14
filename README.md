@@ -1,12 +1,22 @@
 # OpenClaw Telegram Threaded Mode hotfix
 
 Portable hotfix layer for OpenClaw Telegram Threaded Mode. The current scripts
-target OpenClaw `2026.6.11`; legacy `2026.6.10` scripts remain in the repo for
-older installs.
+target OpenClaw `2026.6.11`. The legacy `2026.6.10` scripts are retained for
+historical reference only and are not part of the supported release.
 
 This repository is an operator patch, not an upstream OpenClaw release. It
 patches built `dist/*.js` bundles in an installed OpenClaw package, so review it
 before running it on a production host.
+
+## Support matrix
+
+| OpenClaw version | Status | Verification |
+| --- | --- | --- |
+| `2026.6.11` from npm | Review required | CI runs the non-writing `--check` dry run and confirms that an unmatched signature is rejected without modifying the package. |
+| `2026.6.10` | Legacy scripts only | Not supported or verified by this release. |
+| Any other version | Unsupported | Do not apply without a version-specific review and test. |
+
+Node.js 20 or later is required.
 
 ## What it fixes
 
@@ -109,6 +119,22 @@ Helpful checks:
 openclaw gateway call health --json
 openclaw sessions list --json | jq '.sessions[] | select(.sessionKey | contains(":thread:")) | .sessionKey'
 ```
+
+## Files changed and verification mechanism
+
+The apply script changes only JavaScript files below the target package's
+`dist/` directory. It discovers each target bundle by stable code signatures,
+then applies one guarded transformation at a time. The affected areas are
+Telegram ingress, topic delivery and sent-message cache, auto-reply dispatch,
+agent-runner and agent-command recovery, restart recovery, conversation labels,
+tool-result truncation, request timeouts, and related safeguards listed in
+`HOTFIX_NOTES.md`.
+
+`--check` is a dry run: it calculates all transformations and reports
+`would patch` without writing files or creating backups. The checker script
+then validates expected signatures after application. It deliberately fails
+when a bundle cannot be uniquely identified; this is the expected safe outcome
+for the unreviewed npm `2026.6.11` build and prevents an unsafe application.
 
 ## Rollback
 

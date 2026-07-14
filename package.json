@@ -1,9 +1,20 @@
 {
   "name": "openclaw-threaded-mode-hotfix",
-  "version": "0.1.0",
+  "version": "2026.6.11-1",
   "private": false,
   "description": "Portable OpenClaw Telegram Threaded Mode hotfix scripts.",
   "type": "module",
+  "homepage": "https://github.com/aspalagin/openclaw-threaded-mode-hotfix#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aspalagin/openclaw-threaded-mode-hotfix.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aspalagin/openclaw-threaded-mode-hotfix/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "check:syntax": "node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs && node --check scripts/check-threaded-mode-hotfixes.mjs && node --check scripts/apply-openclaw-2026-6-11-hotfixes.mjs && node --check scripts/check-openclaw-2026-6-11-hotfixes.mjs",
     "check:syntax:6.10": "node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs && node --check scripts/check-threaded-mode-hotfixes.mjs",

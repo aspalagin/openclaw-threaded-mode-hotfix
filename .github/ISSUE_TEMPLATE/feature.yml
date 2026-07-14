@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a version-scoped improvement
+title: "Feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution and affected OpenClaw version
+    validations:
+      required: true
