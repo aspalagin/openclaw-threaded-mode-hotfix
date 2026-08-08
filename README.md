@@ -1,8 +1,8 @@
 # OpenClaw Telegram Threaded Mode hotfix
 
-Portable hotfix layer for OpenClaw Telegram Threaded Mode. The current scripts
-target OpenClaw `2026.6.11`. The legacy `2026.6.10` scripts are retained for
-historical reference only and are not part of the supported release.
+Portable hotfix layer for OpenClaw Telegram Threaded Mode. The current focused
+scripts target OpenClaw `2026.7.1-2`; older full-layer scripts are retained for
+historical reference.
 
 This repository is an operator patch, not an upstream OpenClaw release. It
 patches built `dist/*.js` bundles in an installed OpenClaw package, so review it
@@ -12,7 +12,8 @@ before running it on a production host.
 
 | OpenClaw version | Status | Verification |
 | --- | --- | --- |
-| `2026.6.11` from npm | Review required | CI runs the non-writing `--check` dry run and confirms that an unmatched signature is rejected without modifying the package. |
+| `2026.7.1-2` from npm | Supported for the thread-model patch | CI runs syntax checks, a non-writing dry run, application to a disposable npm install, and the required checker. |
+| `2026.6.11` from npm | Legacy full-layer scripts | Retained for historical reference and separately syntax-checked. |
 | `2026.6.10` | Legacy scripts only | Not supported or verified by this release. |
 | Any other version | Unsupported | Do not apply without a version-specific review and test. |
 
@@ -30,6 +31,16 @@ Node.js 20 or later is required.
   `direct_messages_topic.topic_id` when Telegram does not populate
   `message_thread_id` on native slash-command updates, including the raw update
   object used before slash acknowledgements are delivered.
+- Telegram DM topics do not inherit a user-selected model from the parent DM
+  session; each new topic starts from the configured agent model unless the
+  topic itself has an explicit override.
+- `/new` clears a user-selected model and returns to the configured agent model;
+  `/reset` deliberately preserves the current selection.
+- Telegram Guest Mode suppresses session verbose/progress messages and sends
+  plain-text final answers so the one-shot `answerGuestQuery` slot is reserved
+  for a tag-free final answer.
+- Telegram Guest Mode has a deadline guard so slow tool/research turns do not
+  miss the one-shot Telegram `answerGuestQuery` window silently.
 - Final replies persisted as `pendingFinalDelivery` are recovered after
   restarts instead of being silently lost.
 - The exact tested apply script also includes adjacent generic fixes from the
@@ -38,7 +49,7 @@ Node.js 20 or later is required.
 
 ## Requirements
 
-- OpenClaw `2026.6.11` for the current scripts.
+- OpenClaw `2026.7.1-2` for the current focused thread-model scripts.
 - Node.js available on the OpenClaw host.
 - A normal OpenClaw install, usually at `/usr/lib/node_modules/openclaw`.
 - Telegram Threaded Mode / topics enabled for the bot in BotFather.
@@ -67,13 +78,15 @@ node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs
 node --check scripts/check-threaded-mode-hotfixes.mjs
 node --check scripts/apply-openclaw-2026-6-11-hotfixes.mjs
 node --check scripts/check-openclaw-2026-6-11-hotfixes.mjs
+node --check scripts/apply-thread-model-hotfix-2026-7-1-2.mjs
+node --check scripts/check-thread-model-hotfix-2026-7-1-2.mjs
 ```
 
 Dry-run against the installed package:
 
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
-  node scripts/apply-openclaw-2026-6-11-hotfixes.mjs --check
+  node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs --check
 ```
 
 Apply:
@@ -81,14 +94,14 @@ Apply:
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
   OPENCLAW_HOTFIX_BACKUP_DIR=/root/openclaw-backups/openclaw-threaded-mode-hotfix \
-  node scripts/apply-openclaw-2026-6-11-hotfixes.mjs
+  node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs
 ```
 
 Validate signatures:
 
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
-  node scripts/check-openclaw-2026-6-11-hotfixes.mjs
+  node scripts/check-thread-model-hotfix-2026-7-1-2.mjs
 ```
 
 Restart OpenClaw Gateway from a shell you control:
@@ -112,6 +125,10 @@ external shell.
    is renamed from the tail text after the gateway restart.
 6. Send bare `/new`, then a normal prompt, and confirm the topic is renamed from
    that prompt.
+7. Select a non-default model in one DM topic, create another topic, and confirm
+   the new topic uses the configured default.
+8. Select a non-default model, run `/new`, and confirm the configured default is
+   restored; repeat with `/reset` and confirm the selected model is preserved.
 
 Helpful checks:
 
@@ -122,26 +139,25 @@ openclaw sessions list --json | jq '.sessions[] | select(.sessionKey | contains(
 
 ## Files changed and verification mechanism
 
-The apply script changes only JavaScript files below the target package's
-`dist/` directory. It discovers each target bundle by stable code signatures,
-then applies one guarded transformation at a time. The affected areas are
-Telegram ingress, topic delivery and sent-message cache, auto-reply dispatch,
-agent-runner and agent-command recovery, restart recovery, conversation labels,
-tool-result truncation, request timeouts, and related safeguards listed in
+The current apply script changes three JavaScript files below the target
+package's `dist/` directory: stored model override resolution, preserved
+selection reset logic, and the `/new` session lifecycle call. It discovers each
+target bundle by stable code signatures, then applies one guarded transformation
+at a time. The legacy scripts cover the wider areas listed in
 `HOTFIX_NOTES.md`.
 
 `--check` is a dry run: it calculates all transformations and reports
 `would patch` without writing files or creating backups. The checker script
 then validates expected signatures after application. It deliberately fails
-when a bundle cannot be uniquely identified; this is the expected safe outcome
-for the unreviewed npm `2026.6.11` build and prevents an unsafe application.
+before writing when a bundle cannot be uniquely identified or the installed
+OpenClaw version differs from `2026.7.1-2`.
 
 ## Rollback
 
 The apply script writes backups before changing files. By default they go under:
 
 ```text
-/root/openclaw-backups/openclaw-2026.6.11-hotfixes/
+/root/openclaw-backups/openclaw-thread-model-hotfix/
 ```
 
 If you set `OPENCLAW_HOTFIX_BACKUP_DIR`, use that path instead. To roll back,
@@ -164,3 +180,6 @@ restore your package-level backup.
   identity, not a Telegram delivery target.
 - The auto-label patch is intentionally scoped to Telegram DM topics. It does
   not rename flat DMs or normal group/forum topics.
+- Telegram Guest Mode intentionally runs with runtime tools disabled. Re-enabling
+  `sessions_spawn`, `sessions_yield`, or subagents can detach the final answer
+  from the original `answerGuestQuery` delivery window.

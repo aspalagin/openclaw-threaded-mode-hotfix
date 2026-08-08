@@ -117,6 +117,41 @@ function main() {
       (content) => contains(content, "not cleared: delivered payload did not match stored pending final delivery", "mismatch preserve guard"),
       (content) => contains(content, "promoteNextPendingFinalDeliveryOrClear", "pending backlog promotion"),
     ]),
+    check(files, "telegram-guest-verbose-suppression", (all) => findOne(all, "auto-reply dispatch bundle", [
+      "const createShouldEmitVerboseProgress = (params) => {",
+      "async function dispatchReplyFromConfig",
+    ]), [
+      (content) => contains(content, "if (params.forceOff === true) return \"off\";", "verbose force-off gate"),
+      (content) => contains(content, "const forceGuestVerboseOff = ctx.GuestMode === true || typeof ctx.GuestQueryId === \"string\" && ctx.GuestQueryId.trim().length > 0;", "guest verbose override"),
+      (content) => contains(content, "forceOff: forceGuestVerboseOff", "guest verbose override wiring"),
+    ]),
+    check(files, "telegram-guest-plain-text-delivery", (all) => findOne(all, "Telegram guest delivery bundle", [
+      "async function deliverTextReply(params)",
+      "sendTelegramGuestText",
+    ]), [
+      (content) => contains(content, "const fallbackText = firstChunk?.plainText ?? firstChunk?.text ?? params.replyText;", "guest plain-text fallback"),
+      (content) => contains(content, "parseMode: void 0", "guest parse mode disabled"),
+      (content) => notContains(content, "parseMode: firstChunk?.richMessage ? void 0 : firstChunk?.html ? \"HTML\" : void 0", "old guest HTML parse-mode check"),
+    ]),
+    check(files, "telegram-guest-deadline-guard", (all) => findOne(all, "Telegram bot bundle", [
+      "GuestDeliveryHint",
+      "scheduleGuestReplyDeadline();",
+    ]), [
+      (content) => contains(content, "Runtime tools are disabled in Guest Mode", "guest runtime-tool suppression hint"),
+      (content) => contains(content, "scheduleGuestReplyDeadline();", "guest deadline scheduled"),
+      (content) => contains(content, "telegram guest reply deadline exceeded", "guest deadline abort reason"),
+      (content) => contains(content, "telegram guest reply deadline fallback failed", "guest deadline fallback logging"),
+      (content) => contains(content, "clearGuestReplyDeadline();", "guest deadline cleanup"),
+      (content) => notContains(content, "including longer-running tools", "old long-running guest hint"),
+    ]),
+    check(files, "telegram-guest-no-delegation-tools", (all) => findOne(all, "Telegram bot bundle", [
+      "GuestDeliveryHint",
+      "toolsAllow: isGuestQuery ? [] : void 0",
+    ]), [
+      (content) => contains(content, "toolsAllow: isGuestQuery ? [] : void 0", "guest runtime tools disabled"),
+      (content) => contains(content, "sessions_spawn, sessions_yield, subagents", "guest subagent/yield warning"),
+      (content) => contains(content, "answer directly in this turn instead of delegating", "guest model-switch fallback instruction"),
+    ]),
     check(files, "agent-runner-pending-final-backlog", (all) => findOne(all, "agent runner runtime bundle", [
       "function buildPendingFinalDeliveryText",
       "resolveReplyRunDeliveryContext",

@@ -253,7 +253,7 @@ function resolveTelegramGuestSessionKey(baseSessionKey, msg) {
       next,
       `\tconst ctxPayload = await sessionRuntime.buildChannelInboundEventContext({`,
       `\tconst effectiveInboundEventKind = msg.guest_query_id ? "guest_message" : inboundEventKind;
-\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Do not use message delivery tools, TTS, voice, audio, files, media, reactions, or typing cues. You may use available tools, including longer-running tools, when needed to complete the user's request; do not refuse only because this is Guest Mode." : void 0;
+\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Keep the whole turn under the Telegram Guest Mode timeout and answer best-effort from available information. Runtime tools are disabled in Guest Mode: do not use sessions_spawn, sessions_yield, subagents, message delivery tools, background tasks, TTS, voice, audio, files, media, reactions, typing cues, or model-switching via a child session. If the user asks for a different model, answer directly in this turn instead of delegating. Do not refuse only because this is Guest Mode." : void 0;
 \tconst ctxPayload = await sessionRuntime.buildChannelInboundEventContext({`,
       "Telegram guest delivery hint",
     );
@@ -315,6 +315,88 @@ function resolveTelegramGuestSessionKey(baseSessionKey, msg) {
       `\t\t\tif (options?.durable && durableDelivery) {`,
       `\t\t\tif (options?.durable && durableDelivery && !guestQueryId) {`,
       "Telegram guest durable suppression",
+    );
+  }
+  next = next.replace(
+    `\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Do not use message delivery tools, TTS, voice, audio, files, media, reactions, or typing cues. You may use available tools, including longer-running tools, when needed to complete the user's request; do not refuse only because this is Guest Mode." : void 0;`,
+    `\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Keep the whole turn under the Telegram Guest Mode timeout and answer best-effort from available information. Runtime tools are disabled in Guest Mode: do not use sessions_spawn, sessions_yield, subagents, message delivery tools, background tasks, TTS, voice, audio, files, media, reactions, typing cues, or model-switching via a child session. If the user asks for a different model, answer directly in this turn instead of delegating. Do not refuse only because this is Guest Mode." : void 0;`,
+  );
+  next = next.replace(
+    `\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Keep the whole turn under the Telegram Guest Mode timeout: use tools sparingly, avoid multi-step research and slow sites, and answer best-effort from available information if sources are slow. Do not use message delivery tools, TTS, voice, audio, files, media, reactions, or typing cues. Do not refuse only because this is Guest Mode." : void 0;`,
+    `\tconst guestModeDeliveryHint = msg.guest_query_id ? "Telegram Guest Mode: deliver the final reply as concise plain text only. Keep the whole turn under the Telegram Guest Mode timeout and answer best-effort from available information. Runtime tools are disabled in Guest Mode: do not use sessions_spawn, sessions_yield, subagents, message delivery tools, background tasks, TTS, voice, audio, files, media, reactions, typing cues, or model-switching via a child session. If the user asks for a different model, answer directly in this turn instead of delegating. Do not refuse only because this is Guest Mode." : void 0;`,
+  );
+  if (!next.includes("toolsAllow: isGuestQuery ? [] : void 0")) {
+    next = replaceOnce(
+      next,
+      `\t\t\t\t\t\t\t\t\treplyOptions: {
+\t\t\t\t\t\t\t\t\t\tskillFilter,
+\t\t\t\t\t\t\t\t\t\tdisableBlockStreaming,
+\t\t\t\t\t\t\t\t\t\tabortSignal: replyAbortController.signal,
+\t\t\t\t\t\t\t\t\t\tsourceReplyDeliveryMode: isRoomEvent ? "message_tool_only" : void 0,`,
+      `\t\t\t\t\t\t\t\t\treplyOptions: {
+\t\t\t\t\t\t\t\t\t\tskillFilter,
+\t\t\t\t\t\t\t\t\t\tdisableBlockStreaming,
+\t\t\t\t\t\t\t\t\t\tabortSignal: replyAbortController.signal,
+\t\t\t\t\t\t\t\t\t\ttoolsAllow: isGuestQuery ? [] : void 0,
+\t\t\t\t\t\t\t\t\t\tsourceReplyDeliveryMode: isRoomEvent ? "message_tool_only" : void 0,`,
+      "Telegram guest runtime tools disabled",
+    );
+  }
+  if (!next.includes("telegram guest reply deadline exceeded")) {
+    next = replaceOnce(
+      next,
+      `\tlet hadErrorReplyFailureOrSkip = false;
+\tlet isFirstTurnInSession = false;
+\tlet dispatchError;
+\ttry {`,
+      `\tlet hadErrorReplyFailureOrSkip = false;
+\tlet isFirstTurnInSession = false;
+\tlet dispatchError;
+\tlet guestReplyDeadlineTimer;
+\tconst clearGuestReplyDeadline = () => {
+\t\tif (!guestReplyDeadlineTimer) return;
+\t\tclearTimeout(guestReplyDeadlineTimer);
+\t\tguestReplyDeadlineTimer = void 0;
+\t};
+\tconst scheduleGuestReplyDeadline = () => {
+\t\tif (!guestQueryId) return;
+\t\tguestReplyDeadlineTimer = setTimeout(() => {
+\t\t\tguestReplyDeadlineTimer = void 0;
+\t\t\tif (deliveryState.snapshot().delivered || replyAbortController.signal.aborted) return;
+\t\t\tvoid (async () => {
+\t\t\t\ttry {
+\t\t\t\t\tconst result = await (telegramDeps.deliverReplies ?? deliverReplies)({
+\t\t\t\t\t\treplies: [{ text: "Не успеваю подготовить полный ответ в окне Telegram Guest Mode. Попробуйте задать вопрос короче или напишите боту напрямую." }],
+\t\t\t\t\t\t...deliveryBaseOptions,
+\t\t\t\t\t\ttranscriptMirror: void 0,
+\t\t\t\t\t\tsilent: false,
+\t\t\t\t\t\tmediaLoader: telegramDeps.loadWebMedia
+\t\t\t\t\t});
+\t\t\t\t\tif (result.delivered) {
+\t\t\t\t\t\tdeliveryState.markDelivered();
+\t\t\t\t\t\treplyAbortController.abort(new Error("telegram guest reply deadline exceeded"));
+\t\t\t\t\t}
+\t\t\t\t} catch (err) {
+\t\t\t\t\tlogVerbose(\`telegram guest reply deadline fallback failed: \${formatErrorMessage(err)}\`);
+\t\t\t\t}
+\t\t\t})();
+\t\t}, 240000);
+\t\tguestReplyDeadlineTimer.unref?.();
+\t};
+\tscheduleGuestReplyDeadline();
+\ttry {`,
+      "Telegram guest reply deadline",
+    );
+  }
+  if (!next.includes("\t\t\tclearGuestReplyDeadline();\n\t\t\tprogressDraft.cancel();")) {
+    next = replaceOnce(
+      next,
+      `\t\t} finally {
+\t\t\tprogressDraft.cancel();`,
+      `\t\t} finally {
+\t\t\tclearGuestReplyDeadline();
+\t\t\tprogressDraft.cancel();`,
+      "Telegram guest deadline cleanup",
     );
   }
   next = next.replace(
@@ -462,11 +544,11 @@ async function sendTelegramGuestText(bot, guestQueryId, text, runtime, opts) {
 \t\tif (params.progress.guestAnswered) return;
 \t\tconst chunks = filterEmptyTelegramTextChunks(params.chunkText(params.replyText));
 \t\tconst firstChunk = chunks[0];
-\t\tconst fallbackText = firstChunk?.text ?? params.replyText;
+\t\tconst fallbackText = firstChunk?.plainText ?? firstChunk?.text ?? params.replyText;
 \t\tconst text = chunks.length > 1 ? \`\${fallbackText.trimEnd()}\\n\\n[Ответ обрезан из-за лимита Telegram guest mode.]\` : fallbackText;
 \t\ttry {
 \t\t\tfirstDeliveredMessageId = await sendTelegramGuestText(params.bot, params.guestQueryId, text, params.runtime, {
-\t\t\t\tparseMode: firstChunk?.richMessage ? void 0 : firstChunk?.html ? "HTML" : void 0,
+\t\t\t\tparseMode: void 0,
 \t\t\t\tlinkPreview: params.linkPreview,
 \t\t\t\treplyMarkup: params.replyMarkup,
 \t\t\t\ttoken: params.token
@@ -486,6 +568,18 @@ async function sendTelegramGuestText(bot, guestQueryId, text, runtime, opts) {
       "Telegram guest deliverTextReply",
     );
   }
+  next = next.replace(
+    `\t\tconst fallbackText = firstChunk?.text ?? params.replyText;
+\t\tconst text = chunks.length > 1 ? \`\${fallbackText.trimEnd()}\\n\\n[Ответ обрезан из-за лимита Telegram guest mode.]\` : fallbackText;
+\t\ttry {
+\t\t\tfirstDeliveredMessageId = await sendTelegramGuestText(params.bot, params.guestQueryId, text, params.runtime, {
+\t\t\t\tparseMode: firstChunk?.richMessage ? void 0 : firstChunk?.html ? "HTML" : void 0,`,
+    `\t\tconst fallbackText = firstChunk?.plainText ?? firstChunk?.text ?? params.replyText;
+\t\tconst text = chunks.length > 1 ? \`\${fallbackText.trimEnd()}\\n\\n[Ответ обрезан из-за лимита Telegram guest mode.]\` : fallbackText;
+\t\ttry {
+\t\t\tfirstDeliveredMessageId = await sendTelegramGuestText(params.bot, params.guestQueryId, text, params.runtime, {
+\t\t\t\tparseMode: void 0,`,
+  );
   if (!next.includes("mediaList.length === 0 || params.guestQueryId")) {
     next = replaceOnce(
       next,
@@ -820,6 +914,46 @@ function patchToolSchema(source) {
   next = next.replace(
     '}), { description: "Structured attachments; each entry uses media." })',
     '}), { description: "Structured attachments. For local files, use filePath/path rather than media to avoid inline WebSocket payloads." })',
+  );
+  return next;
+}
+
+function patchDispatchGuestVerboseSuppression(source) {
+  let next = source;
+  if (next.includes("forceGuestVerboseOff")) return next;
+  next = replaceOnce(
+    next,
+    `const createShouldEmitVerboseProgress = (params) => {
+\tconst resolveCurrentExplicitLevel = () => {
+\t\tif (params.sessionKey && params.storePath) try {`,
+    `const createShouldEmitVerboseProgress = (params) => {
+\tconst resolveCurrentExplicitLevel = () => {
+\t\tif (params.forceOff === true) return "off";
+\t\tif (params.sessionKey && params.storePath) try {`,
+    "dispatch guest verbose explicit off",
+  );
+  next = replaceOnce(
+    next,
+    `\tconst resolveLevel = () => {
+\t\tconst explicitLevel = resolveCurrentExplicitLevel();`,
+    `\tconst resolveLevel = () => {
+\t\tif (params.forceOff === true) return "off";
+\t\tconst explicitLevel = resolveCurrentExplicitLevel();`,
+    "dispatch guest verbose fallback off",
+  );
+  next = replaceOnce(
+    next,
+    `\tconst sessionAgentCfg = resolveAgentConfig(cfg, sessionAgentId);
+\tconst verboseProgress = createShouldEmitVerboseProgress({
+\t\tsessionKey: acpDispatchSessionKey,
+\t\tstorePath: sessionStoreEntry.storePath,`,
+    `\tconst sessionAgentCfg = resolveAgentConfig(cfg, sessionAgentId);
+\tconst forceGuestVerboseOff = ctx.GuestMode === true || typeof ctx.GuestQueryId === "string" && ctx.GuestQueryId.trim().length > 0;
+\tconst verboseProgress = createShouldEmitVerboseProgress({
+\t\tsessionKey: acpDispatchSessionKey,
+\t\tstorePath: sessionStoreEntry.storePath,
+\t\tforceOff: forceGuestVerboseOff,`,
+    "dispatch guest verbose override",
   );
   return next;
 }
@@ -1423,6 +1557,7 @@ function main() {
     applyFile(targets.sessions, "windows-tray-sessions-list-limit", patchSessions),
     applyFile(targets.messageHandler, "windows-tray-dual-role-metadata-bypass", patchMessageHandler),
     applyFile(targets.tools, "message-tool-large-local-files-schema", patchToolSchema),
+    applyFile(targets.dispatch, "telegram-guest-verbose-suppression", patchDispatchGuestVerboseSuppression),
     applyFile(targets.dispatch, "pending-final-delivery-clear-guard", patchDispatchPendingFinalDelivery),
     applyFile(targets.agentRunner, "agent-runner-pending-final-backlog", patchAgentRunnerPendingFinalDelivery),
     applyFile(targets.agentCommand, "agent-command-pending-final-backlog", patchAgentCommandPendingFinalDelivery),

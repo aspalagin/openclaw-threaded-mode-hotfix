@@ -17,6 +17,17 @@ jobs:
         with:
           node-version: 20
       - run: npm run check:syntax
+      - run: npm install --ignore-scripts --no-save --prefix "$RUNNER_TEMP/openclaw-2026.7.1-2" openclaw@2026.7.1-2
+      - run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.7.1-2/node_modules/openclaw"
+          backup_root="$RUNNER_TEMP/openclaw-thread-model-backups"
+          before=$(find "$package_root/dist" -type f -name '*.js' -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+          OPENCLAW_PACKAGE_ROOT="$package_root" npm run dry-run:7.1.2
+          after=$(find "$package_root/dist" -type f -name '*.js' -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+          test "$before" = "$after"
+          OPENCLAW_PACKAGE_ROOT="$package_root" OPENCLAW_HOTFIX_BACKUP_DIR="$backup_root" \
+            node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs
+          OPENCLAW_PACKAGE_ROOT="$package_root" npm run check:installed:7.1.2
       - run: npm install --ignore-scripts --no-save --prefix "$RUNNER_TEMP/openclaw-2026.6.11" openclaw@2026.6.11
       - run: |
           package_root="$RUNNER_TEMP/openclaw-2026.6.11/node_modules/openclaw"

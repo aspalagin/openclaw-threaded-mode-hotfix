@@ -1,7 +1,7 @@
 # Hotfix notes
 
-Tested baselines: OpenClaw `2026.6.10` legacy scripts and OpenClaw
-`2026.6.11` current scripts.
+Tested baselines: OpenClaw `2026.6.10` and `2026.6.11` legacy scripts, plus the
+focused thread-model hotfix for OpenClaw `2026.7.1-2`.
 
 The production issue fixed by this layer:
 
@@ -46,6 +46,14 @@ The production issue fixed by this layer:
   The label instruction is now embedded into the user message itself and only
   the first non-empty line of the reply is used, stripped of wrapping
   quotes/markdown (`conversation-label-prompt-inline`).
+- A user model selected in the parent Telegram DM session was inherited by new
+  DM-topic sessions. Because `/new` also preserved explicit user selection, one
+  model choice could survive new sessions and spread to newly created topics.
+  The `2026.7.1-2` patch blocks only derived parent inheritance for Telegram DM
+  topic keys, while keeping explicitly supplied parent session keys intact.
+- `/new` now opts out of preserving a user model override and returns to the
+  configured agent model. `/reset` and programmatic `sessions.reset` keep their
+  previous model-preserving behavior.
 
 Operational rules:
 
@@ -60,6 +68,8 @@ Operational rules:
   command/message context. Do not use `direct_messages_topic_id` for rich
   message delivery in this OpenClaw path.
 - Run the checker after every OpenClaw package update.
+- Treat the model override as topic-local. A model selected in one Telegram DM
+  topic must not affect the root DM or neighboring topics.
 
 This repository intentionally omits host-specific production notes, node ids,
 private paths, tokens, IP addresses, and operator chat ids.

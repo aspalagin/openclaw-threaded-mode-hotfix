@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.7.1-2 - 2026-08-08
+
+- Added a focused, guarded hotfix for OpenClaw `2026.7.1-2`.
+- Prevented Telegram DM topics from inheriting model overrides from the parent
+  DM session.
+- Made `/new` clear user model overrides while `/reset` preserves them.
+- Added an idempotent checker, backup-on-write behavior, smoke-test guidance,
+  and CI coverage against a disposable npm installation.
+- Included pending legacy Telegram Guest Mode hardening for the `2026.6.10`
+  reference scripts.
+
 ## v2026.6.11-1 - 2026-07-14
 
 - Released the OpenClaw 2026.6.11 hotfix scripts with guarded version checks.
