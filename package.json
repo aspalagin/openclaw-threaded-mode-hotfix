@@ -1,8 +1,8 @@
 {
   "name": "openclaw-threaded-mode-hotfix",
-  "version": "2026.7.1-2",
+  "version": "2026.9.7-1",
   "private": false,
-  "description": "Portable OpenClaw Telegram Threaded Mode hotfix scripts.",
+  "description": "Portable OpenClaw Telegram Threaded Mode hotfix scripts (2026.9.7 DM topic adopt, 2026.7.1-2 thread model).",
   "type": "module",
   "homepage": "https://github.com/aspalagin/openclaw-threaded-mode-hotfix#readme",
   "repository": {
@@ -16,12 +16,16 @@
     "node": ">=20"
   },
   "scripts": {
-    "check:syntax": "node --check scripts/apply-thread-model-hotfix-2026-7-1-2.mjs && node --check scripts/check-thread-model-hotfix-2026-7-1-2.mjs",
+    "check:syntax": "npm run check:syntax:9.7 && npm run check:syntax:7.1.2",
+    "check:syntax:9.7": "node --check scripts/apply-dm-topic-adopt-hotfix-2026-9-7.mjs && node --check scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs && node --check scripts/test-dm-topic-adopt-hotfix-2026-9-7.mjs",
     "check:syntax:7.1.2": "node --check scripts/apply-thread-model-hotfix-2026-7-1-2.mjs && node --check scripts/check-thread-model-hotfix-2026-7-1-2.mjs",
-    "check:installed": "node scripts/check-thread-model-hotfix-2026-7-1-2.mjs",
+    "check:installed": "node scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs",
+    "check:installed:9.7": "node scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs",
     "check:installed:7.1.2": "node scripts/check-thread-model-hotfix-2026-7-1-2.mjs",
-    "dry-run": "node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs --check",
-    "dry-run:7.1.2": "node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs --check"
+    "dry-run": "node scripts/apply-dm-topic-adopt-hotfix-2026-9-7.mjs --dry-run",
+    "dry-run:9.7": "node scripts/apply-dm-topic-adopt-hotfix-2026-9-7.mjs --dry-run",
+    "dry-run:7.1.2": "node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs --check",
+    "test:9.7": "node scripts/test-dm-topic-adopt-hotfix-2026-9-7.mjs"
   },
   "license": "MIT"
 }

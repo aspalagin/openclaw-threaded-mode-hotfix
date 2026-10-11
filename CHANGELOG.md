@@ -1,7 +1,19 @@
 # Changelog
 
-## Unreleased
+## v2026.9.7-1 - 2026-10-12
 
+- Added the `dm-topic-adopt` hotfix for OpenClaw `2026.9.7`: a private-chat
+  message that arrives without `message_thread_id` within 3 seconds after the
+  same user's `forum_topic_created` service message is routed into that topic
+  instead of the root DM. Scripts: `apply-dm-topic-adopt-hotfix-2026-9-7.mjs`
+  (`--package-root`, `--backup-dir`, `--dry-run`, marker guard, backup,
+  `node --check` before replacing the bundle),
+  `check-dm-topic-adopt-hotfix-2026-9-7.mjs` (8 signature assertions) and
+  `test-dm-topic-adopt-hotfix-2026-9-7.mjs` (13 functional scenarios against a
+  temporary copy of the bundle).
+- CI now has a job for OpenClaw `2026.9.7`: dry run must not write, checker must
+  fail on vanilla, functional test, apply + checker + test, re-apply is a
+  no-op, version guard. The `2026.7.1-2` job is retained.
 - Removed the legacy OpenClaw `2026.6.10` and `2026.6.11` scripts and the
   `2026.6.10` reference patch from `main`; they remain in git history and under
   tag `v2026.6.11-1`.

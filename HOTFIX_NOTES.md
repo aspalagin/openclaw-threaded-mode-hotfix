@@ -1,11 +1,27 @@
 # Hotfix notes
 
-Tested baselines: the focused thread-model hotfix for OpenClaw `2026.7.1-2`.
-The earlier full-layer scripts for OpenClaw `2026.6.10` and `2026.6.11` were
-removed from `main` (see git history and tag `v2026.6.11-1`); the notes below
-keep the history of what that layer fixed.
+Tested baselines: the DM topic adopt hotfix for OpenClaw `2026.9.7` (verified
+in production on 2026-10-12) and the focused thread-model hotfix for OpenClaw
+`2026.7.1-2`. The earlier full-layer scripts for OpenClaw `2026.6.10` and
+`2026.6.11` were removed from `main` (see git history and tag `v2026.6.11-1`);
+the notes below keep the history of what that layer fixed.
 
-The production issues fixed by this layer:
+OpenClaw `2026.9.7`, `dm-topic-adopt`:
+
+- Since 2026-10-09 one Telegram client (Android) creates the private topic but
+  sends the user's message to the root chat: the bot gets `forum_topic_created`
+  with the new `message_thread_id` and, in the same second, the message without
+  `message_thread_id`. Every observed failure was exactly this pair (same
+  `date`, consecutive `message_id`).
+- The fix lives in `resolveTelegramMessageThreadSpec`, because lane keys,
+  authorization, message context, native commands, debounce and reply chains
+  all go through it. Pending topic per `chat:user`, adoption window 3 s,
+  adopted ids cached per `chat:message_id`, bot-created topics and groups
+  ignored, visible `[hotfix][dm-topic-adopt] adopted ...` log line.
+- The user's message itself stays in the root chat on the Telegram side; only
+  the OpenClaw session, typing and reply move into the topic.
+
+The production issues fixed by the earlier layer:
 
 - Telegram DM topic sessions were created correctly, but delivery must stay on
   Bot API `message_thread_id`.
