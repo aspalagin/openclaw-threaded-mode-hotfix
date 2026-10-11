@@ -26,7 +26,9 @@ it before running it on a production host.
 | `2026.6.10` | Removed, see git history | Legacy scripts and the reference patch were deleted from `main`. |
 | Any other version | Unsupported | Do not apply without a version-specific review and test. |
 
-Node.js 20 or later is required.
+Node.js 20 or later runs the apply and check scripts. The functional test for
+`2026.9.7` imports the OpenClaw bundle and therefore needs a Node.js version
+that OpenClaw itself supports (`>=24.16.0 <25 || >=26.1.0`).
 
 ## OpenClaw 2026.9.7: DM topic adopt
 

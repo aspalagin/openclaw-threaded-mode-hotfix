@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - run: npm install --ignore-scripts --no-save --prefix "$RUNNER_TEMP/openclaw-2026.9.7" openclaw@2026.9.7
       - name: dry-run must not write
         run: |

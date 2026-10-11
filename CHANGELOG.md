@@ -13,7 +13,8 @@
   temporary copy of the bundle).
 - CI now has a job for OpenClaw `2026.9.7`: dry run must not write, checker must
   fail on vanilla, functional test, apply + checker + test, re-apply is a
-  no-op, version guard. The `2026.7.1-2` job is retained.
+  no-op, version guard. The job runs on Node.js 24 because the functional test
+  imports the OpenClaw bundle. The `2026.7.1-2` job is retained.
 - Removed the legacy OpenClaw `2026.6.10` and `2026.6.11` scripts and the
   `2026.6.10` reference patch from `main`; they remain in git history and under
   tag `v2026.6.11-1`.
