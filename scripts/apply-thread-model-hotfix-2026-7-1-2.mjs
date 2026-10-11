@@ -6,7 +6,7 @@ import path from "node:path";
 const expectedVersion = "2026.7.1-2";
 const packageRoot = process.env.OPENCLAW_PACKAGE_ROOT || "/usr/lib/node_modules/openclaw";
 const distDir = path.join(packageRoot, "dist");
-const backupRoot = process.env.OPENCLAW_HOTFIX_BACKUP_DIR || "/root/openclaw-backups/openclaw-thread-model-hotfix";
+const backupRoot = process.env.OPENCLAW_HOTFIX_BACKUP_DIR || path.resolve("openclaw-hotfix-backups", "thread-model-hotfix");
 const dryRun = process.argv.includes("--check") || process.argv.includes("--dry-run");
 
 function fail(message) {

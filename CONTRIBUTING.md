@@ -8,7 +8,7 @@ Before opening a pull request, run:
 
 ```bash
 npm run check:syntax
-OPENCLAW_PACKAGE_ROOT=/path/to/reviewed-openclaw npm run dry-run:6.11
+OPENCLAW_PACKAGE_ROOT=/path/to/reviewed-openclaw npm run dry-run:7.1.2
 ```
 
 The dry run must not modify the package and must complete successfully only for

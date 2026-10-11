@@ -1,9 +1,11 @@
 # Hotfix notes
 
-Tested baselines: OpenClaw `2026.6.10` and `2026.6.11` legacy scripts, plus the
-focused thread-model hotfix for OpenClaw `2026.7.1-2`.
+Tested baselines: the focused thread-model hotfix for OpenClaw `2026.7.1-2`.
+The earlier full-layer scripts for OpenClaw `2026.6.10` and `2026.6.11` were
+removed from `main` (see git history and tag `v2026.6.11-1`); the notes below
+keep the history of what that layer fixed.
 
-The production issue fixed by this layer:
+The production issues fixed by this layer:
 
 - Telegram DM topic sessions were created correctly, but delivery must stay on
   Bot API `message_thread_id`.

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Removed the legacy OpenClaw `2026.6.10` and `2026.6.11` scripts and the
+  `2026.6.10` reference patch from `main`; they remain in git history and under
+  tag `v2026.6.11-1`.
+- Removed host-specific defaults: backups now go to
+  `./openclaw-hotfix-backups/...` unless `OPENCLAW_HOTFIX_BACKUP_DIR` is set.
+
 ## v2026.7.1-2 - 2026-08-08
 
 - Added a focused, guarded hotfix for OpenClaw `2026.7.1-2`.

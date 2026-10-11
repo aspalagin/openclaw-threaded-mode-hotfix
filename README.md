@@ -1,8 +1,8 @@
 # OpenClaw Telegram Threaded Mode hotfix
 
 Portable hotfix layer for OpenClaw Telegram Threaded Mode. The current focused
-scripts target OpenClaw `2026.7.1-2`; older full-layer scripts are retained for
-historical reference.
+scripts target OpenClaw `2026.7.1-2`; older full-layer scripts for `2026.6.10`
+and `2026.6.11` were removed from `main` and remain available in git history.
 
 This repository is an operator patch, not an upstream OpenClaw release. It
 patches built `dist/*.js` bundles in an installed OpenClaw package, so review it
@@ -13,8 +13,8 @@ before running it on a production host.
 | OpenClaw version | Status | Verification |
 | --- | --- | --- |
 | `2026.7.1-2` from npm | Supported for the thread-model patch | CI runs syntax checks, a non-writing dry run, application to a disposable npm install, and the required checker. |
-| `2026.6.11` from npm | Legacy full-layer scripts | Retained for historical reference and separately syntax-checked. |
-| `2026.6.10` | Legacy scripts only | Not supported or verified by this release. |
+| `2026.6.11` | Removed, see git history | The legacy full-layer scripts were deleted from `main`; use tag `v2026.6.11-1` if you still need them. |
+| `2026.6.10` | Removed, see git history | Legacy scripts and the reference patch were deleted from `main`. |
 | Any other version | Unsupported | Do not apply without a version-specific review and test. |
 
 Node.js 20 or later is required.
@@ -74,12 +74,7 @@ cd openclaw-threaded-mode-hotfix
 Check syntax:
 
 ```bash
-node --check scripts/apply-openclaw-2026-6-10-hotfixes.mjs
-node --check scripts/check-threaded-mode-hotfixes.mjs
-node --check scripts/apply-openclaw-2026-6-11-hotfixes.mjs
-node --check scripts/check-openclaw-2026-6-11-hotfixes.mjs
-node --check scripts/apply-thread-model-hotfix-2026-7-1-2.mjs
-node --check scripts/check-thread-model-hotfix-2026-7-1-2.mjs
+npm run check:syntax
 ```
 
 Dry-run against the installed package:
@@ -93,7 +88,7 @@ Apply:
 
 ```bash
 OPENCLAW_PACKAGE_ROOT=/usr/lib/node_modules/openclaw \
-  OPENCLAW_HOTFIX_BACKUP_DIR=/root/openclaw-backups/openclaw-threaded-mode-hotfix \
+  OPENCLAW_HOTFIX_BACKUP_DIR=/var/backups/openclaw-hotfixes/thread-model \
   node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs
 ```
 
@@ -143,7 +138,7 @@ The current apply script changes three JavaScript files below the target
 package's `dist/` directory: stored model override resolution, preserved
 selection reset logic, and the `/new` session lifecycle call. It discovers each
 target bundle by stable code signatures, then applies one guarded transformation
-at a time. The legacy scripts cover the wider areas listed in
+at a time. The removed legacy scripts covered the wider areas listed in
 `HOTFIX_NOTES.md`.
 
 `--check` is a dry run: it calculates all transformations and reports
@@ -154,10 +149,11 @@ OpenClaw version differs from `2026.7.1-2`.
 
 ## Rollback
 
-The apply script writes backups before changing files. By default they go under:
+The apply script writes backups before changing files. By default they go under
+a directory relative to where you run the script:
 
 ```text
-/root/openclaw-backups/openclaw-thread-model-hotfix/
+./openclaw-hotfix-backups/thread-model-hotfix/<timestamp>/
 ```
 
 If you set `OPENCLAW_HOTFIX_BACKUP_DIR`, use that path instead. To roll back,
