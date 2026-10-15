@@ -1,8 +1,9 @@
 # Hotfix notes
 
 Tested baselines: the DM topic adopt hotfix for OpenClaw `2026.9.7` (verified
-in production on 2026-10-12) and the focused thread-model hotfix for OpenClaw
-`2026.7.1-2`. The earlier full-layer scripts for OpenClaw `2026.6.10` and
+in production on 2026-10-12), the sub-agent owner scope hotfix for OpenClaw
+`2026.9.7` (verified in production on 2026-10-15) and the focused thread-model
+hotfix for OpenClaw `2026.7.1-2`. The earlier full-layer scripts for OpenClaw `2026.6.10` and
 `2026.6.11` were removed from `main` (see git history and tag `v2026.6.11-1`);
 the notes below keep the history of what that layer fixed.
 
@@ -20,6 +21,27 @@ OpenClaw `2026.9.7`, `dm-topic-adopt`:
   ignored, visible `[hotfix][dm-topic-adopt] adopted ...` log line.
 - The user's message itself stays in the root chat on the Telegram side; only
   the OpenClaw session, typing and reply move into the topic.
+
+OpenClaw `2026.9.7`, `subagent-owner-scope`:
+
+- Every child run started by `sessions_spawn` ran as a non-owner: the
+  dispatcher launched the gateway `agent` call with least-privilege scopes
+  (no `operator.admin`), the handler derived `senderIsOwner = false` and the
+  owner-only core tools (`nodes`, `computer`, `mobile_ui`, `sessions`,
+  `terminal`, `portal`, `conversations_*`, `openclaw`, `screen`) were denied to
+  the child even when the parent run was the owner's. First noticed when a
+  sub-agent of a guest turn could not reach `nodes`; the cause is independent
+  of guest mode and affects sub-agents of ordinary owner sessions too.
+- The fix forwards the parent's `senderIsOwner` into `createSessionsSpawnTool`
+  and from there into the spawn context, and `launchChildRun` sets
+  `scopes: ["operator.admin"]` on the `agent` request only when it is `true`.
+  The dispatcher's existing `params.scopes ?? …` contract carries it; no new
+  authorization path is introduced, and non-owner parents are unchanged.
+- The standalone updater bundle (`dist/package-update-activation-recovery.mjs`)
+  contains a copy of both patched functions; it is not part of the gateway
+  runtime and is excluded from the bundle locator so the needles stay unique.
+- Verified on a live install: a sub-agent spawned from an owner session called
+  `nodes status` successfully after the gateway restart.
 
 The production issues fixed by the earlier layer:
 

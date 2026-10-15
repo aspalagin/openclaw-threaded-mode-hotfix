@@ -1,5 +1,29 @@
 # Changelog
 
+## v2026.9.7-2 - 2026-10-15
+
+- Added the `subagent-owner-scope` hotfix for OpenClaw `2026.9.7`: a sub-agent
+  spawned with `sessions_spawn` from an owner's run is launched with
+  `scopes: ["operator.admin"]`, so the gateway treats the child as an owner
+  run and no longer denies it the owner-only core tools (`nodes`, `computer`,
+  `mobile_ui`, `sessions`, `terminal`, `portal`, `conversations_*`, `openclaw`,
+  `screen`). Non-owner parents (group chats, other senders) are unchanged.
+  Scripts: `apply-subagent-owner-scope-hotfix-2026-9-7.mjs` (two bundles,
+  all-or-nothing, `--package-root`, `--backup-dir`, `--dry-run`, marker
+  guards, backups, `node --check` before replacing each bundle),
+  `check-subagent-owner-scope-hotfix-2026-9-7.mjs` (10 signature assertions
+  across both bundles) and `test-subagent-owner-scope-hotfix-2026-9-7.mjs`
+  (20 scenarios: syntax of the patched copies, the three patched object
+  literals evaluated with synthetic inputs, end-to-end owner / non-owner /
+  unknown flows, version guard).
+- The `verify-2026-9-7` CI job now also runs the new scripts (dry run must not
+  write, checker fails on vanilla, functional test, apply + checker + test,
+  re-apply is a no-op, version guard) and finally checks both `2026.9.7`
+  hotfixes on the same install.
+- `npm run check:syntax`, `dry-run:9.7`, `check:installed:9.7` and `test:9.7`
+  cover both `2026.9.7` hotfixes; per-hotfix variants are suffixed
+  `:dm-topic-adopt` / `:subagent-owner-scope`.
+
 ## v2026.9.7-1 - 2026-10-12
 
 - Added the `dm-topic-adopt` hotfix for OpenClaw `2026.9.7`: a private-chat

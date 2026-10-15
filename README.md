@@ -1,11 +1,14 @@
 # OpenClaw Telegram Threaded Mode hotfix
 
 Portable hotfix scripts for OpenClaw Telegram Threaded Mode (private bot
-topics). Each hotfix is pinned to one OpenClaw release and refuses to run on
-any other version:
+topics) and for the sub-agent tooling used from those sessions. Each hotfix is
+pinned to one OpenClaw release and refuses to run on any other version:
 
 - OpenClaw `2026.9.7`: **DM topic adopt** — a user message that Telegram sends
   to the root chat right after creating a topic is routed into that topic.
+- OpenClaw `2026.9.7`: **sub-agent owner scope** — a sub-agent spawned from an
+  owner's run inherits the owner's tool access instead of being denied the
+  owner-only core tools (`nodes`, `computer`, `sessions`, …).
 - OpenClaw `2026.7.1-2`: **thread model** — DM topics do not inherit a model
   override from the parent DM; `/new` clears the override, `/reset` keeps it.
 
@@ -20,7 +23,7 @@ it before running it on a production host.
 
 | OpenClaw version | Status | Verification |
 | --- | --- | --- |
-| `2026.9.7` from npm | Supported for the DM topic adopt patch | CI: syntax, non-writing dry run, checker failing on vanilla, functional test (13 scenarios) on a patched copy, apply + checker + test on a disposable npm install, re-apply is a no-op, version guard. |
+| `2026.9.7` from npm | Supported for the DM topic adopt patch and the sub-agent owner scope patch | CI, per hotfix: syntax, non-writing dry run, checker failing on vanilla, functional test (13 scenarios for DM topic adopt, 20 for sub-agent owner scope) on a patched copy, apply + checker + test on a disposable npm install, re-apply is a no-op, version guard; both patches are then checked together on the same install. |
 | `2026.7.1-2` from npm | Retained, not re-verified in production | CI still runs syntax, dry run, apply to a disposable npm install, and the checker. |
 | `2026.6.11` | Removed, see git history | Use tag `v2026.6.11-1` if you still need the legacy full-layer scripts. |
 | `2026.6.10` | Removed, see git history | Legacy scripts and the reference patch were deleted from `main`. |
@@ -137,6 +140,95 @@ script, then restart the gateway. For a full package rollback, reinstall
 - Pending/adopted state lives in the gateway process; a restart between the
   service message and the user message loses the pairing.
 
+## OpenClaw 2026.9.7: sub-agent owner scope
+
+### Symptom
+
+A sub-agent started with the `sessions_spawn` tool from the owner's session
+(a DM topic, the root DM or a guest turn of the owner) cannot use the
+owner-only core tools: `nodes`, `computer`, `mobile_ui`, `sessions`,
+`terminal`, `portal`, `conversations_*`, `openclaw`, `screen`. The child run
+fails with messages such as `Unknown tool id: openclaw:core:nodes`, and its
+code-mode catalog is noticeably smaller than the parent's (72 tools instead of
+97 on the reference install). Observed on 2026-10-15.
+
+### Mechanism
+
+`sessions_spawn` launches the child through the in-process gateway call
+`agent`. The dispatcher (`callSubagentGatewayWithDispatchMode`) picks
+least-privilege operator scopes for that call unless the request carries an
+explicit `scopes` list, and the only cases that set one are the launch
+authorization and the out-of-process model override. Without `operator.admin`
+the gateway `agent` handler derives `senderIsOwner = false` for the child and
+applies the owner-only core tool denylist, regardless of who started the
+parent run.
+
+### What the patch changes
+
+Two bundles under `dist/` (expected names `openclaw-tools-*.mjs` and
+`sessions-spawn-tool-*.mjs`, located by code signatures, never by file name;
+the standalone updater bundle `package-update-activation-recovery.mjs`, which
+duplicates the gateway code, is skipped):
+
+- `createOpenClawTools` already receives `options.senderIsOwner` and forwards
+  it to the message, nodes and sessions tools; the patch forwards it to
+  `createSessionsSpawnTool` as well.
+- The spawn context handed to `spawnSubagentDirect` carries `senderIsOwner`,
+  and `launchChildRun` adds `scopes: ["operator.admin"]` to the gateway
+  `agent` request when `ctx.senderIsOwner === true` — the same `params.scopes`
+  contract the dispatcher already honours.
+
+A child inherits owner access only when the parent run itself was an owner
+run. Group chats and non-owner senders keep the previous least-privilege
+launch; collector runs (`collect: true`) are not touched. Any other value of
+`senderIsOwner` (missing, `false`, a non-boolean) leaves the request as it was.
+
+### Apply
+
+```bash
+# dry run (writes nothing)
+node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root /usr/lib/node_modules/openclaw --dry-run
+
+# apply (backups go to ./openclaw-hotfix-backups/subagent-owner-scope-hotfix/<timestamp>/ unless --backup-dir is set)
+node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root /usr/lib/node_modules/openclaw \
+  --backup-dir /var/backups/openclaw-hotfixes/subagent-owner-scope
+
+# verify signatures in both bundles
+node scripts/check-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root /usr/lib/node_modules/openclaw
+
+# functional test (20 scenarios) against the installed (or still vanilla) bundles; never writes them
+node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root /usr/lib/node_modules/openclaw
+```
+
+The same options and environment variables as for the DM topic adopt script
+apply. The apply is all-or-nothing: both patches are computed in memory first,
+each bundle is backed up, written to a temporary file, `node --check`ed and
+only then renamed over the original. Then restart the gateway from a shell you
+control.
+
+### Verify in production
+
+Spawn a sub-agent from an owner session and let it call `nodes` (for example
+`nodes status`). Before the patch the tool is unknown to the child; after the
+patch it works and the child's code-mode catalog has the same owner-only tools
+as the parent. A sub-agent spawned from a group chat or by a non-owner sender
+must still be denied those tools.
+
+### Rollback
+
+Restore `dist/openclaw-tools-*.mjs` and `dist/sessions-spawn-tool-*.mjs` from
+the backup directory printed by the apply script, then restart the gateway.
+
+### Limitations
+
+- The test evaluates the patched object literals in isolation (synthetic
+  options → spawn context → child launch request) and does not import the
+  gateway runtime; the owner/non-owner behaviour of the running gateway was
+  verified on a live install.
+- Nodes paired without `operator.admin` (for example a phone running the
+  Control UI) still produce non-owner runs; the patch does not change how the
+  parent run's `senderIsOwner` is derived.
+
 ## OpenClaw 2026.7.1-2: thread model
 
 Retained from the previous release and still exercised by CI on a disposable
@@ -205,5 +297,7 @@ openclaw sessions list --json | jq '.sessions[] | select(.sessionKey | contains(
 - Keep `to` as `telegram:<chatId>` and store the topic id as thread metadata.
 - The composite key `...:thread:<chatId>:<topicId>` is an OpenClaw session
   identity, not a Telegram delivery target.
-- Run the checker again after every OpenClaw package update; a version bump
+- Run the checkers again after every OpenClaw package update; a version bump
   makes every script here refuse to run until it is reviewed for the new build.
+- The two `2026.9.7` hotfixes touch different bundles and can be applied in
+  any order; CI checks both on the same install.

@@ -57,6 +57,40 @@ jobs:
           mkdir -p "$RUNNER_TEMP/not-openclaw"
           echo '{"name":"openclaw","version":"0.0.0"}' > "$RUNNER_TEMP/not-openclaw/package.json"
           if node scripts/apply-dm-topic-adopt-hotfix-2026-9-7.mjs --package-root "$RUNNER_TEMP/not-openclaw" --dry-run; then exit 1; fi
+      - name: "subagent-owner-scope: dry-run must not write"
+        run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.9.7/node_modules/openclaw"
+          before=$(find "$package_root/dist" -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+          node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root" --dry-run | tee dry-run-owner-scope.log
+          grep -q 'dry-run changed=2' dry-run-owner-scope.log
+          after=$(find "$package_root/dist" -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+          test "$before" = "$after"
+      - name: "subagent-owner-scope: checker fails on vanilla"
+        run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.9.7/node_modules/openclaw"
+          if node scripts/check-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root"; then exit 1; fi
+      - name: "subagent-owner-scope: functional test on a patched copy of the vanilla bundles"
+        run: node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$RUNNER_TEMP/openclaw-2026.9.7/node_modules/openclaw"
+      - name: "subagent-owner-scope: apply, check, test, re-apply is a no-op"
+        run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.9.7/node_modules/openclaw"
+          node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root" --backup-dir "$RUNNER_TEMP/subagent-owner-scope-backups" | tee apply-owner-scope.log
+          grep -q 'complete changed=2' apply-owner-scope.log
+          test -n "$(find "$RUNNER_TEMP/subagent-owner-scope-backups" -type f -name 'openclaw-tools-*.mjs')"
+          test -n "$(find "$RUNNER_TEMP/subagent-owner-scope-backups" -type f -name 'sessions-spawn-tool-*.mjs')"
+          node scripts/check-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root"
+          node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root"
+          node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root" | tee reapply-owner-scope.log
+          grep -q 'complete changed=0' reapply-owner-scope.log
+          test -z "$(find "$package_root/dist" -name 'zz-subagent-owner-scope-test-*' -o -name '*.tmp.mjs')"
+      - name: "subagent-owner-scope: version guard rejects a foreign package"
+        run: |
+          if node scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$RUNNER_TEMP/not-openclaw" --dry-run; then exit 1; fi
+      - name: "both 2026.9.7 hotfixes coexist on one install"
+        run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.9.7/node_modules/openclaw"
+          node scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs --package-root "$package_root"
+          node scripts/check-subagent-owner-scope-hotfix-2026-9-7.mjs --package-root "$package_root"
 
   verify-2026-7-1-2:
     runs-on: ubuntu-latest
