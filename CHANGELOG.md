@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.1-1 - 2026-11-06
+
+- Added a version-pinned OpenClaw 2026.11.1 port for DM topic adoption, topic
+  model isolation, `/new` versus `/reset`, and native sub-agent owner scope.
+- Preserve upstream owner-context forwarding; patch only the missing child
+  launch scope. Legacy scripts and verification jobs remain available.
+- Added pristine-artifact CI and offline behavior checks, including dry-run,
+  backups, failed planning, version guards and idempotent re-application.
+
 ## v2026.9.7-2 - 2026-10-15
 
 - Added the `subagent-owner-scope` hotfix for OpenClaw `2026.9.7`: a sub-agent

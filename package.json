@@ -1,8 +1,8 @@
 {
   "name": "openclaw-threaded-mode-hotfix",
-  "version": "2026.9.7-2",
+  "version": "2026.11.1-1",
   "private": false,
-  "description": "Portable OpenClaw hotfix scripts (2026.9.7 DM topic adopt, 2026.9.7 sub-agent owner scope, 2026.7.1-2 thread model).",
+  "description": "Portable OpenClaw hotfix scripts: 2026.11.1 DM topic adoption, topic model isolation and sub-agent owner scope; legacy 2026.9.7 and 2026.7.1-2.",
   "type": "module",
   "homepage": "https://github.com/aspalagin/openclaw-threaded-mode-hotfix#readme",
   "repository": {
@@ -16,7 +16,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "check:syntax": "npm run check:syntax:9.7 && npm run check:syntax:7.1.2",
+    "check:syntax": "npm run check:syntax:9.7 && npm run check:syntax:7.1.2 && npm run check:syntax:11.1",
     "check:syntax:9.7": "node --check scripts/apply-dm-topic-adopt-hotfix-2026-9-7.mjs && node --check scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs && node --check scripts/test-dm-topic-adopt-hotfix-2026-9-7.mjs && node --check scripts/apply-subagent-owner-scope-hotfix-2026-9-7.mjs && node --check scripts/check-subagent-owner-scope-hotfix-2026-9-7.mjs && node --check scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs",
     "check:syntax:7.1.2": "node --check scripts/apply-thread-model-hotfix-2026-7-1-2.mjs && node --check scripts/check-thread-model-hotfix-2026-7-1-2.mjs",
     "check:installed": "node scripts/check-dm-topic-adopt-hotfix-2026-9-7.mjs",
@@ -31,7 +31,12 @@
     "dry-run:7.1.2": "node scripts/apply-thread-model-hotfix-2026-7-1-2.mjs --check",
     "test:9.7": "node scripts/test-dm-topic-adopt-hotfix-2026-9-7.mjs && node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs",
     "test:9.7:dm-topic-adopt": "node scripts/test-dm-topic-adopt-hotfix-2026-9-7.mjs",
-    "test:9.7:subagent-owner-scope": "node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs"
+    "test:9.7:subagent-owner-scope": "node scripts/test-subagent-owner-scope-hotfix-2026-9-7.mjs",
+    "check:syntax:11.1": "for file in scripts/*2026-11-1.mjs patches/2026.11.1/*.mjs patches/2026.11.1/ports/*.mjs; do node --check \"$file\" || exit; done",
+    "dry-run:11.1": "node scripts/apply-2026-11-1.mjs --dry-run",
+    "apply:11.1": "node scripts/apply-2026-11-1.mjs",
+    "check:installed:11.1": "node scripts/check-2026-11-1.mjs",
+    "test:11.1": "node scripts/test-2026-11-1.mjs"
   },
   "license": "MIT"
 }
