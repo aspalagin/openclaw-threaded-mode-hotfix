@@ -4,6 +4,7 @@ Portable hotfix scripts for OpenClaw Telegram Threaded Mode (private bot
 topics) and for the sub-agent tooling used from those sessions. Each hotfix is
 pinned to one OpenClaw release and refuses to run on any other version:
 
+- OpenClaw `2026.11.1`: **DM topic adopt, topic model isolation, `/new` model reset, and sub-agent owner scope** — the current version-specific port.
 - OpenClaw `2026.9.7`: **DM topic adopt** — a user message that Telegram sends
   to the root chat right after creating a topic is routed into that topic.
 - OpenClaw `2026.9.7`: **sub-agent owner scope** — a sub-agent spawned from an
@@ -23,6 +24,7 @@ it before running it on a production host.
 
 | OpenClaw version | Status | Verification |
 | --- | --- | --- |
+| `2026.11.1` from npm | Supported for the current port below | Pristine npm artifact: dry-run without writes, vanilla checker rejection, apply/check, idempotence, version/drift guards and offline behavior tests. |
 | `2026.9.7` from npm | Supported for the DM topic adopt patch and the sub-agent owner scope patch | CI, per hotfix: syntax, non-writing dry run, checker failing on vanilla, functional test (13 scenarios for DM topic adopt, 20 for sub-agent owner scope) on a patched copy, apply + checker + test on a disposable npm install, re-apply is a no-op, version guard; both patches are then checked together on the same install. |
 | `2026.7.1-2` from npm | Retained, not re-verified in production | CI still runs syntax, dry run, apply to a disposable npm install, and the checker. |
 | `2026.6.11` | Removed, see git history | Use tag `v2026.6.11-1` if you still need the legacy full-layer scripts. |
@@ -32,6 +34,54 @@ it before running it on a production host.
 Node.js 20 or later runs the apply and check scripts. The functional test for
 `2026.9.7` imports the OpenClaw bundle and therefore needs a Node.js version
 that OpenClaw itself supports (`>=24.16.0 <25 || >=26.1.0`).
+
+## OpenClaw 2026.11.1
+
+Use the version-specific commands; the existing unsuffixed commands remain
+aliases for the legacy `2026.9.7` scripts.
+
+```bash
+npm run check:syntax
+npm run dry-run:11.1 -- --package-root /usr/lib/node_modules/openclaw
+npm run apply:11.1 -- --package-root /usr/lib/node_modules/openclaw --backup-dir /var/backups/openclaw-threaded
+npm run check:installed:11.1 -- --package-root /usr/lib/node_modules/openclaw
+npm run test:11.1 -- --package-root /usr/lib/node_modules/openclaw
+```
+
+This port changes five Gateway bundles, located by unique code signatures:
+
+- Adopt an unthreaded private message into the same user's newly created topic
+  within three seconds. Normal threaded messages, groups and bot-created topics
+  retain their behavior.
+- Keep model overrides local to each DM topic. Explicit fork/spawn parent
+  inheritance still works. `/new` clears the user model pin; `/reset` preserves it.
+- Launch a native child with `operator.admin` only when the parent context has
+  `senderIsOwner === true`. OpenClaw already forwards the owner flag through tool
+  options and spawn context. The port verifies the inherited spawn context and
+  leaves the upstream forwarding code unchanged.
+
+The owner-scope change covers the native child launch used by the existing
+public hotfix. Separate visible-session placement/dispatch changes are outside
+this port. No Telegram transport or session data is rewritten.
+
+The scripts accept only `openclaw@2026.11.1`. They compute all changes, verify
+assertions and syntax, and back up all affected files before replacing any.
+An already applied patch is checked and left unchanged. A failed write restores
+files already replaced from that run's backup. The default backup directory is
+`./openclaw-hotfix-backups/`; `OPENCLAW_PACKAGE_ROOT` and
+`OPENCLAW_HOTFIX_BACKUP_DIR` are supported. Dry-run and check write nothing.
+Tests use temporary copies and mocked contexts; they do not start a gateway or
+send Telegram requests. CI runs on Node.js 26.
+
+If using this together with the rich-media and
+[Telegram Guest Mode](https://github.com/aspalagin/openclaw-telegram-guest-mode)
+kits, apply rich media first, this threaded-mode port next, and guest kit
+**1.5.1 or later** last. Re-apply guest mode after any later rich-media apply,
+then run all three checkers before restarting.
+
+After applying, restart the gateway from an external shell. To roll back,
+restore the printed backup's `dist/` files to the same package and restart.
+The `2026.9.7` and `2026.7.1-2` scripts below remain unchanged and version-pinned.
 
 ## OpenClaw 2026.9.7: DM topic adopt
 
