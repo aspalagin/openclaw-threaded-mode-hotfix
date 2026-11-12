@@ -132,3 +132,24 @@ jobs:
           npm run apply:11.1 -- --package-root "$package_root" --backup-dir "$RUNNER_TEMP/hotfix-backups"
           npm run check:installed:11.1 -- --package-root "$package_root"
           npm run test:11.1 -- --package-root "$package_root"
+
+  verify-2026-11-3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.13.0'
+      - run: npm run check:syntax
+      - name: Extract the pinned pristine package (no dependency install)
+        run: |
+          npm pack openclaw@2026.11.3 --ignore-scripts --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/openclaw-2026.11.3"
+          tar -xzf "$RUNNER_TEMP/openclaw-2026.11.3.tgz" -C "$RUNNER_TEMP/openclaw-2026.11.3"
+      - name: Verify vanilla and patched behavior
+        run: |
+          package_root="$RUNNER_TEMP/openclaw-2026.11.3/package"
+          npm run test:11.3 -- --package-root "$package_root"
+          npm run apply:11.3 -- --package-root "$package_root" --backup-dir "$RUNNER_TEMP/hotfix-backups"
+          npm run check:installed:11.3 -- --package-root "$package_root"
+          npm run test:11.3 -- --package-root "$package_root"

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { assert, fs, path, vm, root, sourceFor, functionSource, regionSource } from "./test-support-2026-11-1.mjs";
+import { assert, fs, path, vm, root, prepared, testVersion, sourceFor, functionSource, regionSource } from "./test-support-2026-11-1.mjs";
 import { pathToFileURL } from "node:url";
 
+if (testVersion === "2026.11.1") {
 // Actual resolver/helper code from the candidate bundle; no gateway import or network.
 const dm = sourceFor("telegram-dm-topic-adopt-created");
 const numericImport = dm.match(/import \{[^\n]*w as parseStrictPositiveInteger[^\n]*from "(\.\/[^"]+)"/);
@@ -33,6 +34,11 @@ assert.deepEqual(resolve(plain(41, 500, { from: { ...user, id: 21 } })), { scope
 assert.deepEqual(resolve(plain(42, 503)), { id: 105, scope: "dm" });
 assert.deepEqual(resolve(plain(50, 600, { chat: { id: -10, type: "group" }, message_thread_id: 99 })), { scope: "none" });
 assert.deepEqual(resolve(plain(51, 600, { chat: { ...chat, is_direct_messages: true }, direct_messages_topic: { topic_id: 77 } })), { id: 77, scope: "direct-messages" });
+
+} else {
+  assert.ok(prepared.every((entry) => entry.modules.every(({ name }) => name !== "telegram-dm-topic-adopt-created")));
+  assert.ok(prepared.every((entry) => !entry.after.includes("//#region hotfix: telegram-dm-topic-adopt-created")), "11.3 must not introduce DM topic adoption");
+}
 
 // Topic isolation does not remove explicit fork/spawn inheritance.
 const model = vm.createContext({ normalizeOptionalString: (v) => typeof v === "string" ? v.trim() : undefined, resolveSessionParentSessionKey: () => "derived-parent" });
@@ -74,4 +80,4 @@ for (const owner of [true, false, undefined, "true", 1]) {
   assert.equal(request.params, childLaunch.request);
   assert.equal(request.timeoutMs, 1000);
 }
-console.log("PASS: DM adoption boundaries, topic model isolation, /new vs /reset, strict owner-only child scope");
+console.log(`PASS: ${testVersion === "2026.11.1" ? "DM adoption boundaries" : "DM adoption disabled"}, topic model isolation, /new vs /reset, strict owner-only child scope`);
