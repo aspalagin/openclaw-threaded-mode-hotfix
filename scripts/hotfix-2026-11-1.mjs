@@ -28,10 +28,11 @@ export function resolvePackageRoot(options) {
   return path.join(npm.stdout.trim(), "openclaw");
 }
 
-export function assertVersion(root) {
+export function assertVersion(root, version = expectedVersion) {
+  if (!["2026.11.1", "2026.11.3"].includes(version)) throw new Error(`unsupported hotfix version ${version}`);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  if (pkg.name !== "openclaw" || pkg.version !== expectedVersion) {
-    throw new Error(`unsupported package ${pkg.name}@${pkg.version}; expected openclaw@${expectedVersion}`);
+  if (pkg.name !== "openclaw" || pkg.version !== version) {
+    throw new Error(`unsupported package ${pkg.name}@${pkg.version}; expected openclaw@${version}`);
   }
 }
 
@@ -41,11 +42,13 @@ export function checkSyntax(source, label) {
   if (result.status !== 0) throw new Error(`${label}: syntax check failed: ${result.stderr || result.stdout}`);
 }
 
-export async function prepare(root, checkOnly = false) {
-  assertVersion(root);
+export async function prepare(root, checkOnly = false, version = expectedVersion) {
+  assertVersion(root, version);
   const corpus = new Corpus(walkJs(path.join(root, "dist")));
   const files = new Map();
   for (const name of modules) {
+    // Retain the legacy port, but never adopt root messages into a guessed DM topic on 11.3.
+    if (version === "2026.11.3" && name === "telegram-dm-topic-adopt-created") continue;
     const mod = await import(new URL(`../patches/2026.11.1/ports/${name}.mjs`, import.meta.url));
     const { file } = corpus.locateModule(mod);
     let entry = files.get(file);
@@ -72,14 +75,14 @@ export async function prepare(root, checkOnly = false) {
   return [...files.values()];
 }
 
-export async function main(checkOnly = false) {
+export async function main(checkOnly = false, version = expectedVersion) {
   const options = optionsFromArgs();
   if (options.help) {
-    console.log("Usage: node scripts/" + (checkOnly ? "check" : "apply") + "-2026-11-1.mjs [--package-root DIR] [--backup-dir DIR] [--dry-run]");
+    console.log("Usage: node scripts/" + (checkOnly ? "check" : "apply") + `-${version.replaceAll(".", "-")}.mjs [--package-root DIR] [--backup-dir DIR] [--dry-run]`);
     return;
   }
   const root = resolvePackageRoot(options);
-  const entries = await prepare(root, checkOnly);
+  const entries = await prepare(root, checkOnly, version);
   const changed = entries.filter((entry) => entry.before !== entry.after);
   for (const entry of entries) console.log(`[${entry.before === entry.after ? "ok" : "would-patch"}] ${path.relative(root, entry.file)}`);
   if (checkOnly || options.dryRun || changed.length === 0) {
@@ -87,7 +90,7 @@ export async function main(checkOnly = false) {
     return;
   }
   const backupRoot = path.resolve(options.backupDir || process.env.OPENCLAW_HOTFIX_BACKUP_DIR || "openclaw-hotfix-backups");
-  const backup = path.join(backupRoot, `2026.11.1-${Date.now()}-${process.pid}`);
+  const backup = path.join(backupRoot, `${version}-${Date.now()}-${process.pid}`);
   // Compute, validate and back up every file before replacing any bundle.
   for (const entry of changed) {
     entry.backup = path.join(backup, path.relative(root, entry.file));

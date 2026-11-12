@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.3-1 - 2026-11-12
+
+- Add version-pinned OpenClaw 2026.11.3 commands for topic model isolation,
+  `/new` model reset and native sub-agent owner scope.
+- Do not install DM topic adoption on 2026.11.3: guessed topics can fail with
+  Telegram `BOT_TOPIC_WRONG_HOME`. Existing adoption patches are not removed;
+  preserve legacy version-specific paths.
+- Reuse the existing patches and offline checks; retain 2026.11.1 CI and add
+  pristine 2026.11.3 verification, including disabled adoption and idempotence.
+
 ## v2026.11.1-1 - 2026-11-06
 
 - Added a version-pinned OpenClaw 2026.11.1 port for DM topic adoption, topic
